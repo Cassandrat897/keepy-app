@@ -1,0 +1,50 @@
+import React from 'react';
+import { 
+  Instagram, 
+  Plus, 
+  Search, 
+  Settings, 
+  Moon, 
+  Sun, 
+  Trash2, 
+  Edit2, 
+  ChevronDown, 
+  ChevronRight,
+  Filter,
+  ExternalLink,
+  MoreVertical,
+  Share2,
+  FolderOpen,
+  ArrowLeft,
+  ArrowUpDown,
+  Facebook,
+  Twitter,
+  Globe,
+  Video, // Using Video as proxy for TikTok
+  Lock
+} from 'lucide-react';
+
+export const Icons = {
+  Instagram,
+  Plus,
+  Search,
+  Settings,
+  Moon,
+  Sun,
+  Trash2,
+  Edit2,
+  ChevronDown,
+  ChevronRight,
+  Filter,
+  ExternalLink,
+  MoreVertical,
+  Share2,
+  FolderOpen,
+  ArrowLeft,
+  ArrowUpDown,
+  Facebook,
+  Twitter,
+  Globe,
+  Video,
+  Lock
+};
