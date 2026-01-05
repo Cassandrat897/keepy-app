@@ -17,19 +17,10 @@ const BRANDING = {
   logoDark: "https://i.ibb.co/v4TcLNbr/logo-full-lighttext.png", 
 };
 
-// Initial Mock Data
-const INITIAL_CATEGORIES: Category[] = [
-  { id: '1', name: 'Fashion', color: '#FFB3BA' },
-  { id: '2', name: 'Tech', color: '#BAE1FF' },
-  { id: '3', name: 'Food', color: '#BAFFC9' },
-  { id: '4', name: 'Streetwear', color: '#FFDFBA', parentId: '1' }, // Subcategory of Fashion
-];
+// Initial Mock Data - Cleared as requested
+const INITIAL_CATEGORIES: Category[] = [];
 
-const INITIAL_PROFILES: Profile[] = [
-  { id: 'p1', username: 'mkbhd', platform: 'instagram', categoryId: '2', notes: 'Best tech reviews', createdAt: Date.now() },
-  { id: 'p2', username: 'hypebeast', platform: 'instagram', categoryId: '4', notes: 'Streetwear news', createdAt: Date.now() - 10000 },
-  { id: 'p3', username: 'TheVerge', platform: 'twitter', categoryId: '2', notes: 'Tech news', createdAt: Date.now() - 20000 },
-];
+const INITIAL_PROFILES: Profile[] = [];
 
 export default function App() {
   // --- Auth State ---
@@ -80,6 +71,7 @@ export default function App() {
   // Modals
   const [isAddProfileOpen, setIsAddProfileOpen] = useState(false);
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
+  const [isManageCategoriesOpen, setIsManageCategoriesOpen] = useState(false); // New state for mobile management
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
 
@@ -611,11 +603,19 @@ export default function App() {
           <div className="flex items-center gap-2">
             {renderLogo()}
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setDarkMode(!darkMode)} className="p-2">
-              {darkMode ? <Icons.Sun className="w-6 h-6 text-gray-600 dark:text-slate-300" /> : <Icons.Moon className="w-6 h-6 text-gray-600 dark:text-slate-300" />}
+          <div className="flex items-center gap-3">
+             {/* New Mobile Manage Categories Button */}
+             <button 
+               onClick={() => setIsManageCategoriesOpen(true)}
+               className="p-2 text-gray-500 dark:text-slate-400 hover:text-pink-500 dark:hover:text-pink-400 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800"
+               title="Manage Categories"
+             >
+               <Icons.FolderOpen className="w-6 h-6" />
+             </button>
+            <button onClick={() => setDarkMode(!darkMode)} className="p-2 text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg">
+              {darkMode ? <Icons.Sun className="w-6 h-6" /> : <Icons.Moon className="w-6 h-6" />}
             </button>
-            <button onClick={handleLogout} className="p-2 text-gray-500 hover:text-red-500">
+            <button onClick={handleLogout} className="p-2 text-gray-500 dark:text-slate-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg">
               <Icons.Lock className="w-6 h-6" />
             </button>
           </div>
@@ -921,6 +921,63 @@ export default function App() {
                Create Category
              </button>
           </div>
+      </Modal>
+      
+      {/* Manage Categories Modal (Mobile Only primarily, but accessible) */}
+      <Modal isOpen={isManageCategoriesOpen} onClose={() => setIsManageCategoriesOpen(false)} title="Manage Categories">
+         <div className="space-y-4">
+            <button 
+              onClick={() => { setIsManageCategoriesOpen(false); setIsAddCategoryOpen(true); }}
+              className="w-full py-3 rounded-xl border-2 border-dashed border-gray-300 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:border-pink-400 hover:text-pink-500 transition-colors flex items-center justify-center gap-2 font-medium"
+            >
+              <Icons.Plus className="w-5 h-5" /> New Category
+            </button>
+            
+            <div className="max-h-[60vh] overflow-y-auto space-y-1">
+               {categories.length === 0 && (
+                  <p className="text-center text-gray-400 py-4">No categories yet.</p>
+               )}
+               {displayCategories.map(cat => (
+                  <div key={cat.id} className="space-y-1">
+                     <div className="flex items-center gap-2 p-2 rounded-xl bg-gray-50 dark:bg-slate-800/50">
+                        {cat.children.length > 0 && (
+                          <button onClick={() => toggleCategoryExpand(cat.id)} className="p-1 text-gray-400">
+                             {expandedCategoryIds.includes(cat.id) ? <Icons.ChevronDown className="w-4 h-4"/> : <Icons.ChevronRight className="w-4 h-4"/>}
+                          </button>
+                        )}
+                        <div className="flex-1 flex items-center gap-2">
+                           <span className="w-3 h-3 rounded-full" style={{backgroundColor: cat.color}}></span>
+                           <span className="font-medium text-gray-900 dark:text-white">{cat.name}</span>
+                        </div>
+                        <button 
+                           onClick={() => handleDeleteCategory(cat.id)}
+                           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                        >
+                           <Icons.Trash2 className="w-4 h-4" />
+                        </button>
+                     </div>
+                     {expandedCategoryIds.includes(cat.id) && (
+                        <div className="ml-6 space-y-1 border-l-2 border-gray-100 dark:border-slate-800 pl-2">
+                           {cat.children.map(sub => (
+                              <div key={sub.id} className="flex items-center gap-2 p-2 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                                 <div className="flex-1 flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full" style={{backgroundColor: sub.color}}></span>
+                                    <span className="text-sm text-gray-700 dark:text-gray-300">{sub.name}</span>
+                                 </div>
+                                 <button 
+                                    onClick={() => handleDeleteCategory(sub.id)}
+                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                                 >
+                                    <Icons.Trash2 className="w-3.5 h-3.5" />
+                                 </button>
+                              </div>
+                           ))}
+                        </div>
+                     )}
+                  </div>
+               ))}
+            </div>
+         </div>
       </Modal>
 
       {/* Profile Preview/Details Modal */}
