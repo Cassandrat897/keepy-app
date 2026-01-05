@@ -17,10 +17,11 @@ const PlatformIcon = ({ platform }: { platform: Platform }) => {
           <Icons.Facebook className="w-6 h-6" />
         </div>
       );
-    case 'twitter':
+    case 'x':
       return (
-        <div className="w-12 h-12 rounded-full bg-black dark:bg-sky-500 flex-shrink-0 flex items-center justify-center text-white shadow-sm">
-          <Icons.Twitter className="w-6 h-6" />
+        <div className="w-12 h-12 rounded-full bg-black flex-shrink-0 flex items-center justify-center text-white shadow-sm border border-gray-800">
+          {/* Using Unicode Double-Struck Capital X which closely resembles the logo */}
+          <span className="text-2xl font-bold leading-none mt-[-2px]">𝕏</span>
         </div>
       );
     case 'tiktok':
@@ -48,9 +49,12 @@ const PlatformIcon = ({ platform }: { platform: Platform }) => {
 };
 
 export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, onClick, onEdit }) => {
-  const displayTitle = profile.platform === 'website' 
-    ? profile.username.replace(/^https?:\/\/(www\.)?/, '').split('/')[0] // Clean display for URL
-    : `@${profile.username}`;
+  // Use displayName if available, otherwise format the username/url
+  const displayTitle = profile.displayName 
+    ? profile.displayName 
+    : (profile.platform === 'website' 
+        ? profile.username.replace(/^https?:\/\/(www\.)?/, '').split('/')[0] 
+        : `@${profile.username}`);
 
   return (
     <div 
@@ -66,12 +70,12 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, onC
       <PlatformIcon platform={profile.platform} />
 
       <div className="flex-1 min-w-0">
-        <h3 className="font-semibold text-gray-900 dark:text-white truncate" title={profile.username}>
+        <h3 className="font-semibold text-gray-900 dark:text-white truncate" title={profile.displayName || profile.username}>
           {displayTitle}
         </h3>
         <div className="flex items-center gap-2 mt-0.5">
           <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 dark:text-slate-500">
-            {profile.platform}
+            {profile.platform === 'x' ? 'X' : profile.platform}
           </span>
         </div>
         {profile.notes && (

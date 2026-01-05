@@ -1,4 +1,4 @@
-export type Platform = 'instagram' | 'facebook' | 'tiktok' | 'twitter' | 'website';
+export type Platform = 'instagram' | 'facebook' | 'tiktok' | 'x' | 'website';
 
 export interface Category {
   id: string;
@@ -9,7 +9,8 @@ export interface Category {
 
 export interface Profile {
   id: string;
-  username: string; // For 'website', this is the URL
+  username: string; // For 'website', this is the URL. For others, it's the handle or ID.
+  displayName?: string; // Optional custom name
   platform: Platform;
   categoryId: string;
   notes: string;

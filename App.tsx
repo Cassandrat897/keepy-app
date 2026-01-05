@@ -42,11 +42,11 @@ export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>(() => {
     const saved = localStorage.getItem('keepy_profiles');
     if (saved) {
-      // Migration: Ensure 'platform' exists for old data
       const parsed = JSON.parse(saved);
       return parsed.map((p: any) => ({
         ...p,
-        platform: p.platform || 'instagram'
+        // Migration: Ensure platform exists and migrate twitter -> x
+        platform: (p.platform === 'twitter' ? 'x' : p.platform) || 'instagram'
       }));
     }
     return INITIAL_PROFILES;
@@ -61,6 +61,10 @@ export default function App() {
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [expandedCategoryIds, setExpandedCategoryIds] = useState<string[]>([]);
+  
+  // Separate state for the picker in the modal to allow independent expansion
+  const [pickerExpandedCategoryIds, setPickerExpandedCategoryIds] = useState<string[]>([]);
+  
   const [searchQuery, setSearchQuery] = useState('');
   
   // Sorting & Filtering State
@@ -78,6 +82,7 @@ export default function App() {
 
   // Forms
   const [newProfileUsername, setNewProfileUsername] = useState('');
+  const [newProfileDisplayName, setNewProfileDisplayName] = useState('');
   const [newProfilePlatform, setNewProfilePlatform] = useState<Platform>('instagram');
   const [newProfileNotes, setNewProfileNotes] = useState('');
   const [newProfileCategory, setNewProfileCategory] = useState('');
@@ -130,6 +135,12 @@ export default function App() {
     );
   };
 
+  const togglePickerExpand = (id: string) => {
+    setPickerExpandedCategoryIds(prev => 
+      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+    );
+  };
+
   const sortCategories = (cats: Category[]) => {
     return [...cats].sort((a, b) => {
       if (categorySort === 'a-z') return a.name.localeCompare(b.name);
@@ -142,10 +153,13 @@ export default function App() {
   };
 
   const getProfileLink = (profile: Profile) => {
+    // If username is a full URL (happens for website or complex share links), use it
+    if (profile.username.startsWith('http')) return profile.username;
+
     switch (profile.platform) {
       case 'instagram': return `https://instagram.com/${profile.username}`;
       case 'facebook': return `https://facebook.com/${profile.username}`;
-      case 'twitter': return `https://twitter.com/${profile.username}`;
+      case 'x': return `https://x.com/${profile.username}`;
       case 'tiktok': return `https://tiktok.com/@${profile.username.replace('@', '')}`;
       case 'website': return profile.username.startsWith('http') ? profile.username : `https://${profile.username}`;
       default: return '#';
@@ -156,13 +170,26 @@ export default function App() {
     let clean = input.trim();
     if (platform === 'website') return clean; // Keep websites as is
 
-    // Remove URL parts for social platforms if pasted as full URL
-    if (clean.includes('instagram.com/')) clean = clean.split('instagram.com/')[1].split('/')[0].split('?')[0];
-    else if (clean.includes('facebook.com/')) clean = clean.split('facebook.com/')[1].split('/')[0].split('?')[0];
-    else if (clean.includes('twitter.com/')) clean = clean.split('twitter.com/')[1].split('/')[0].split('?')[0];
-    else if (clean.includes('x.com/')) clean = clean.split('x.com/')[1].split('/')[0].split('?')[0];
-    else if (clean.includes('tiktok.com/@')) clean = clean.split('tiktok.com/@')[1].split('/')[0].split('?')[0];
-    else if (clean.includes('tiktok.com/')) clean = clean.split('tiktok.com/')[1].split('/')[0].split('?')[0];
+    // Handle pasted Full URLs
+    if (clean.startsWith('http')) {
+      // Facebook Special Handling for Share Links
+      if (platform === 'facebook' && clean.includes('facebook.com/')) {
+         const afterDomain = clean.split('facebook.com/')[1];
+         // If it's a share link or profile.php, we need to be careful not to strip too much
+         if (afterDomain.startsWith('share') || afterDomain.startsWith('profile.php')) {
+             if (afterDomain.startsWith('profile.php')) return afterDomain; // Keep query params for profile.php
+             return afterDomain.split('?')[0]; // Strip tracking params from share links usually
+         }
+      }
+
+      // Generic cleanup (Strip domain and get first segment)
+      if (clean.includes('instagram.com/')) clean = clean.split('instagram.com/')[1].split('/')[0].split('?')[0];
+      else if (clean.includes('facebook.com/')) clean = clean.split('facebook.com/')[1].split('/')[0].split('?')[0];
+      else if (clean.includes('twitter.com/')) clean = clean.split('twitter.com/')[1].split('/')[0].split('?')[0];
+      else if (clean.includes('x.com/')) clean = clean.split('x.com/')[1].split('/')[0].split('?')[0];
+      else if (clean.includes('tiktok.com/@')) clean = clean.split('tiktok.com/@')[1].split('/')[0].split('?')[0];
+      else if (clean.includes('tiktok.com/')) clean = clean.split('tiktok.com/')[1].split('/')[0].split('?')[0];
+    }
 
     return clean.replace('@', '');
   };
@@ -174,17 +201,17 @@ export default function App() {
     // Simple heuristics
     if (value.includes('instagram.com')) setNewProfilePlatform('instagram');
     else if (value.includes('facebook.com')) setNewProfilePlatform('facebook');
-    else if (value.includes('twitter.com') || value.includes('x.com')) setNewProfilePlatform('twitter');
+    else if (value.includes('twitter.com') || value.includes('x.com')) setNewProfilePlatform('x');
     else if (value.includes('tiktok.com')) setNewProfilePlatform('tiktok');
-    // If it looks like a generic URL and platform is default, maybe switch to website?
-    // Keeping it simple: user manually selects website if they want.
   };
 
   // --- Computed ---
   const filteredProfiles = useMemo(() => {
     let result = profiles.filter(p => {
-       const matchesSearch = p.username.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                             p.notes.toLowerCase().includes(searchQuery.toLowerCase());
+       const searchLower = searchQuery.toLowerCase();
+       const matchesSearch = p.username.toLowerCase().includes(searchLower) || 
+                             p.notes.toLowerCase().includes(searchLower) ||
+                             (p.displayName && p.displayName.toLowerCase().includes(searchLower));
        
        let matchesCategory = true;
        if (selectedCategoryId) {
@@ -205,8 +232,12 @@ export default function App() {
     });
 
     return result.sort((a, b) => {
-      if (profileSort === 'a-z') return a.username.localeCompare(b.username);
-      if (profileSort === 'z-a') return b.username.localeCompare(a.username);
+      // Use display name for sorting if available, fallback to username
+      const nameA = a.displayName || a.username;
+      const nameB = b.displayName || b.username;
+
+      if (profileSort === 'a-z') return nameA.localeCompare(nameB);
+      if (profileSort === 'z-a') return nameB.localeCompare(nameA);
       if (profileSort === 'newest') return b.createdAt - a.createdAt;
       if (profileSort === 'oldest') return a.createdAt - b.createdAt;
       return 0;
@@ -224,6 +255,22 @@ export default function App() {
     }));
   }, [categories, categorySort]);
 
+  // --- Derived State for Mobile Filters ---
+  // 1. Determine the active parent ID based on selectedCategoryId
+  const derivedParentId = useMemo(() => {
+      if (!selectedCategoryId) return '';
+      const cat = categories.find(c => c.id === selectedCategoryId);
+      if (!cat) return '';
+      return cat.parentId || cat.id;
+  }, [selectedCategoryId, categories]);
+
+  // 2. Get subcategories for the active parent to populate the secondary filter
+  const subCategoriesForFilter = useMemo(() => {
+      if (!derivedParentId) return [];
+      const parent = displayCategories.find(c => c.id === derivedParentId);
+      return parent ? parent.children : [];
+  }, [derivedParentId, displayCategories]);
+
   // --- Handlers ---
   const handleSaveProfile = () => {
     if (!newProfileUsername || !newProfileCategory) return;
@@ -236,6 +283,7 @@ export default function App() {
          p.id === editingProfileId ? {
            ...p,
            username: cleanUser,
+           displayName: newProfileDisplayName,
            platform: newProfilePlatform,
            categoryId: newProfileCategory,
            notes: newProfileNotes,
@@ -247,6 +295,7 @@ export default function App() {
        const newProfile: Profile = {
          id: Date.now().toString(),
          username: cleanUser,
+         displayName: newProfileDisplayName,
          platform: newProfilePlatform,
          categoryId: newProfileCategory,
          notes: newProfileNotes,
@@ -261,21 +310,32 @@ export default function App() {
 
   const handleStartEdit = (profile: Profile) => {
     setNewProfileUsername(profile.username);
+    setNewProfileDisplayName(profile.displayName || '');
     setNewProfilePlatform(profile.platform);
     setNewProfileCategory(profile.categoryId);
     setNewProfileNotes(profile.notes);
     setEditingProfileId(profile.id);
     
+    // Auto-expand the category if it's a subcategory so the user sees it selected
+    const cat = categories.find(c => c.id === profile.categoryId);
+    if (cat && cat.parentId) {
+      if (!pickerExpandedCategoryIds.includes(cat.parentId)) {
+        setPickerExpandedCategoryIds(prev => [...prev, cat.parentId!]);
+      }
+    }
+
     setIsPreviewOpen(false); // Close preview if open
     setIsAddProfileOpen(true); // Open form
   };
 
   const resetProfileForm = () => {
     setNewProfileUsername('');
+    setNewProfileDisplayName('');
     setNewProfileNotes('');
     setNewProfileCategory('');
     setNewProfilePlatform('instagram');
     setEditingProfileId(null);
+    setPickerExpandedCategoryIds([]);
   };
 
   const handleAddCategory = () => {
@@ -289,8 +349,13 @@ export default function App() {
     setCategories([...categories, newCategory]);
     
     // Auto-expand parent if subcategory
-    if (newCategoryParent && !expandedCategoryIds.includes(newCategoryParent)) {
-      setExpandedCategoryIds([...expandedCategoryIds, newCategoryParent]);
+    if (newCategoryParent) {
+      if (!expandedCategoryIds.includes(newCategoryParent)) {
+        setExpandedCategoryIds([...expandedCategoryIds, newCategoryParent]);
+      }
+      if (!pickerExpandedCategoryIds.includes(newCategoryParent)) {
+        setPickerExpandedCategoryIds([...pickerExpandedCategoryIds, newCategoryParent]);
+      }
     }
 
     setIsAddCategoryOpen(false);
@@ -358,8 +423,9 @@ export default function App() {
     // Helper to format line
     const formatLine = (p: Profile) => {
       const link = getProfileLink(p);
-      const label = p.platform === 'website' ? 'Web' : p.platform.charAt(0).toUpperCase() + p.platform.slice(1);
-      return `• [${label}] ${link}`;
+      const label = p.platform === 'website' ? 'Web' : p.platform === 'x' ? 'X' : p.platform.charAt(0).toUpperCase() + p.platform.slice(1);
+      const name = p.displayName || p.username;
+      return `• [${label}] ${name}: ${link}`;
     };
 
     // 1. Uncategorized (if any in current filter)
@@ -425,7 +491,7 @@ export default function App() {
   const PLATFORMS: { id: Platform, label: string, icon: React.ReactNode }[] = [
     { id: 'instagram', label: 'Instagram', icon: <Icons.Instagram className="w-4 h-4" /> },
     { id: 'facebook', label: 'Facebook', icon: <Icons.Facebook className="w-4 h-4" /> },
-    { id: 'twitter', label: 'Twitter', icon: <Icons.Twitter className="w-4 h-4" /> },
+    { id: 'x', label: 'X', icon: <span className="text-sm font-bold">𝕏</span> },
     { id: 'tiktok', label: 'TikTok', icon: <Icons.Video className="w-4 h-4" /> },
     { id: 'website', label: 'Website', icon: <Icons.Globe className="w-4 h-4" /> },
   ];
@@ -708,22 +774,38 @@ export default function App() {
                    <option value="all">All Platforms</option>
                    <option value="instagram">Instagram</option>
                    <option value="facebook">Facebook</option>
-                   <option value="twitter">Twitter</option>
+                   <option value="x">X</option>
                    <option value="tiktok">TikTok</option>
                    <option value="website">Websites</option>
                  </select>
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0 no-scrollbar">
-                 {/* Mobile Category & Platform Selects */}
+                 {/* Mobile Category Selects - Split into Parent and Subcategory */}
                  <select 
-                    className="md:hidden bg-gray-50 dark:bg-slate-700 border-none rounded-lg text-sm px-3 py-2 flex-1"
+                    className="md:hidden bg-gray-50 dark:bg-slate-700 border-none rounded-lg text-sm px-3 py-2 flex-1 min-w-[140px]"
                     onChange={(e) => setSelectedCategoryId(e.target.value || null)}
-                    value={selectedCategoryId || ''}
+                    value={derivedParentId}
                  >
                     <option value="">All Categories</option>
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {displayCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                  </select>
+
+                 {/* Secondary Filter: Only appears if a parent is selected and has children */}
+                 {derivedParentId && subCategoriesForFilter.length > 0 && (
+                     <select 
+                        className="md:hidden bg-gray-50 dark:bg-slate-700 border-none rounded-lg text-sm px-3 py-2 flex-1 min-w-[140px] animate-in fade-in slide-in-from-left-2"
+                        onChange={(e) => setSelectedCategoryId(e.target.value)}
+                        value={selectedCategoryId || ''}
+                     >
+                        <option value={derivedParentId}>
+                            All {categories.find(c => c.id === derivedParentId)?.name}
+                        </option>
+                        {subCategoriesForFilter.map(sub => (
+                           <option key={sub.id} value={sub.id}>{sub.name}</option>
+                        ))}
+                     </select>
+                 )}
                  
                  <select
                    value={platformFilter}
@@ -733,7 +815,7 @@ export default function App() {
                    <option value="all">All Platforms</option>
                    <option value="instagram">Instagram</option>
                    <option value="facebook">Facebook</option>
-                   <option value="twitter">Twitter</option>
+                   <option value="x">X</option>
                    <option value="tiktok">TikTok</option>
                    <option value="website">Web</option>
                  </select>
@@ -826,6 +908,19 @@ export default function App() {
 
            <div>
              <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
+                Display Name (Optional)
+             </label>
+             <input 
+               type="text" 
+               className="w-full p-3 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-pink-500 focus:border-transparent outline-none transition-all"
+               placeholder="e.g. My Friend, Cool Shop"
+               value={newProfileDisplayName}
+               onChange={(e) => setNewProfileDisplayName(e.target.value)}
+             />
+           </div>
+
+           <div>
+             <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
                 {newProfilePlatform === 'website' ? 'Website URL' : 'Username or Profile URL'}
              </label>
              <div className="relative">
@@ -838,7 +933,6 @@ export default function App() {
                   placeholder={newProfilePlatform === 'website' ? 'https://example.com' : 'username'}
                   value={newProfileUsername}
                   onChange={(e) => handleProfileInput(e.target.value)}
-                  autoFocus
                 />
              </div>
              {newProfilePlatform !== 'website' && (
@@ -848,34 +942,62 @@ export default function App() {
            
            <div>
              <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Category</label>
-             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto">
-                {displayCategories.flatMap(cat => [
-                   { ...cat, displayName: cat.name, parentName: null },
-                   ...cat.children.map(sub => ({ ...sub, displayName: sub.name, parentName: cat.name }))
-                ]).map(cat => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setNewProfileCategory(cat.id)}
-                    className={`p-2 rounded-lg border text-left text-sm flex items-center gap-2 transition-all ${
-                       newProfileCategory === cat.id 
-                       ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20 text-pink-700 dark:text-pink-300 ring-1 ring-pink-500' 
-                       : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
-                    }`}
-                  >
-                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }}></div>
-                    <div className="flex-1 min-w-0 flex flex-col">
-                        {cat.parentName && (
-                           <span className="text-[10px] text-gray-400 dark:text-slate-500 leading-none mb-0.5 truncate">
-                             {cat.parentName}
-                           </span>
-                        )}
-                        <span className="truncate font-medium">{cat.displayName}</span>
-                    </div>
-                  </button>
+             <div className="flex flex-col gap-2 max-h-60 overflow-y-auto">
+                {displayCategories.map(cat => (
+                  <React.Fragment key={cat.id}>
+                      <div className={`flex items-center gap-2 p-2 rounded-lg border transition-all bg-white dark:bg-slate-800 ${
+                         newProfileCategory === cat.id 
+                         ? 'border-pink-500 ring-1 ring-pink-500 bg-pink-50 dark:bg-pink-900/20' 
+                         : 'border-gray-200 dark:border-slate-700 hover:border-gray-300'
+                      }`}>
+                          {cat.children.length > 0 ? (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); togglePickerExpand(cat.id); }}
+                              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                            >
+                               {pickerExpandedCategoryIds.includes(cat.id) 
+                                  ? <Icons.ChevronDown className="w-4 h-4"/> 
+                                  : <Icons.ChevronRight className="w-4 h-4"/>
+                               }
+                            </button>
+                          ) : (
+                            <div className="w-6 flex-shrink-0" />
+                          )}
+                          
+                          <div 
+                             className="flex-1 flex items-center gap-2 cursor-pointer"
+                             onClick={() => setNewProfileCategory(cat.id)}
+                          >
+                             <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }}></div>
+                             <span className={`font-medium text-sm ${newProfileCategory === cat.id ? 'text-pink-700 dark:text-pink-300' : ''}`}>
+                                {cat.name}
+                             </span>
+                          </div>
+                      </div>
+
+                      {/* Subcategories (Collapsible) */}
+                      {pickerExpandedCategoryIds.includes(cat.id) && cat.children.map(sub => (
+                         <div 
+                           key={sub.id}
+                           className={`ml-8 flex items-center gap-2 p-2 rounded-lg border transition-all bg-white dark:bg-slate-800 cursor-pointer ${
+                              newProfileCategory === sub.id
+                              ? 'border-pink-500 ring-1 ring-pink-500 bg-pink-50 dark:bg-pink-900/20' 
+                              : 'border-gray-200 dark:border-slate-700 hover:border-gray-300'
+                           }`}
+                           onClick={() => setNewProfileCategory(sub.id)}
+                         >
+                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: sub.color }}></div>
+                            <span className={`text-sm ${newProfileCategory === sub.id ? 'text-pink-700 dark:text-pink-300 font-medium' : 'text-gray-600 dark:text-gray-300'}`}>
+                               {sub.name}
+                            </span>
+                         </div>
+                      ))}
+                  </React.Fragment>
                 ))}
+
                 <button 
                   onClick={() => { setIsAddProfileOpen(false); setIsAddCategoryOpen(true); }}
-                  className="p-2 rounded-lg border border-dashed border-gray-300 dark:border-slate-600 text-gray-500 hover:text-pink-500 hover:border-pink-400 flex items-center justify-center gap-1 text-sm h-full min-h-[42px]"
+                  className="p-2 rounded-lg border border-dashed border-gray-300 dark:border-slate-600 text-gray-500 hover:text-pink-500 hover:border-pink-400 flex items-center justify-center gap-1 text-sm h-full min-h-[42px] mt-1"
                 >
                   <Icons.Plus className="w-3 h-3" /> New Category
                 </button>
@@ -918,7 +1040,7 @@ export default function App() {
 
              <div>
                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Color</label>
-               <div className="flex flex-wrap gap-3 mb-3">
+               <div className="flex flex-wrap gap-3 mb-3 items-center">
                  {PASTEL_COLORS.map(color => (
                    <button
                      key={color}
@@ -927,13 +1049,25 @@ export default function App() {
                      style={{ backgroundColor: color }}
                    />
                  ))}
-                 <div className="relative w-8 h-8 overflow-hidden rounded-full border-2 border-gray-200 dark:border-slate-700">
+                 
+                 {/* Spectrum Color Picker */}
+                 <div 
+                   className="relative w-9 h-9 overflow-hidden rounded-full border-2 border-gray-200 dark:border-slate-700 group cursor-pointer shadow-sm hover:scale-110 transition-transform"
+                   style={{ background: 'conic-gradient(from 180deg, #FFB3BA, #FFDFBA, #FFFFBA, #BAFFC9, #BAE1FF, #E2BAFF, #C9C9FF, #FFB3BA)' }}
+                   title="Custom Color"
+                 >
                     <input 
                       type="color" 
-                      className="absolute inset-0 w-[150%] h-[150%] -top-1/4 -left-1/4 cursor-pointer"
+                      className="absolute inset-0 w-[200%] h-[200%] -top-1/2 -left-1/2 opacity-0 cursor-pointer"
                       value={newCategoryColor}
                       onChange={(e) => setNewCategoryColor(e.target.value)}
                     />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                       {/* Optional checkmark if selected, but since it's custom, we can just show the spectrum */}
+                       {!PASTEL_COLORS.includes(newCategoryColor) && (
+                          <div className="w-2 h-2 bg-white rounded-full shadow-md"></div>
+                       )}
+                    </div>
                  </div>
                </div>
              </div>
@@ -1028,7 +1162,7 @@ export default function App() {
                  {(() => {
                     const platform = selectedProfile.platform;
                     if (platform === 'facebook') return <div className="w-24 h-24 rounded-full bg-blue-600 flex items-center justify-center"><Icons.Facebook className="w-12 h-12 text-white" /></div>;
-                    if (platform === 'twitter') return <div className="w-24 h-24 rounded-full bg-black dark:bg-sky-500 flex items-center justify-center"><Icons.Twitter className="w-12 h-12 text-white" /></div>;
+                    if (platform === 'x') return <div className="w-24 h-24 rounded-full bg-black flex items-center justify-center"><span className="text-4xl font-bold text-white">𝕏</span></div>;
                     if (platform === 'tiktok') return <div className="w-24 h-24 rounded-full bg-black flex items-center justify-center border border-gray-800"><Icons.Video className="w-12 h-12 text-white" /></div>;
                     if (platform === 'website') return <div className="w-24 h-24 rounded-full bg-emerald-500 flex items-center justify-center"><Icons.Globe className="w-12 h-12 text-white" /></div>;
                     return <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 p-1 flex items-center justify-center"><div className="w-full h-full bg-white dark:bg-slate-800 rounded-full flex items-center justify-center"><Icons.Instagram className="w-12 h-12 text-gray-900 dark:text-white" /></div></div>;
@@ -1036,11 +1170,11 @@ export default function App() {
               </div>
               
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white text-center break-all">
-                {selectedProfile.platform === 'website' ? selectedProfile.username : `@${selectedProfile.username}`}
+                {selectedProfile.displayName || (selectedProfile.platform === 'website' ? selectedProfile.username : `@${selectedProfile.username}`)}
               </h2>
               <div className="flex gap-2 items-center mt-2">
                 <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-gray-100 dark:bg-slate-700 text-gray-500">
-                  {selectedProfile.platform}
+                  {selectedProfile.platform === 'x' ? 'X' : selectedProfile.platform}
                 </span>
                 <div 
                   className="px-3 py-1 rounded-full text-sm font-medium"
