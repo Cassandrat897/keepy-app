@@ -691,7 +691,7 @@ export default function App() {
       </aside>
 
       {/* --- Main Content --- */}
-      <main className="flex-1 flex flex-col h-full bg-white/50 dark:bg-black/20">
+      <main className="flex-1 flex flex-col h-full bg-white/50 dark:bg-black/20 overflow-x-hidden min-w-0">
         {/* Mobile Header */}
         <div className="md:hidden flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <div className="flex items-center gap-2">
@@ -718,23 +718,25 @@ export default function App() {
         {/* Toolbar */}
         <header className="p-4 md:p-8 pb-0 max-w-7xl mx-auto w-full">
            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-              <div>
-                <h2 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                  {selectedCategoryId ? getCategoryName(selectedCategoryId) : 'All Profiles'}
+              <div className="min-w-0">
+                <h2 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3 flex-wrap">
+                  <span className="truncate max-w-full">
+                    {selectedCategoryId ? getCategoryName(selectedCategoryId) : 'All Profiles'}
+                  </span>
                   {selectedCategoryId && (
-                    <span className="text-sm font-normal px-3 py-1 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500">
+                    <span className="text-sm font-normal px-3 py-1 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 flex-shrink-0">
                        {filteredProfiles.length}
                     </span>
                   )}
                   <button 
                     onClick={handleShare}
-                    className="ml-2 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-400 hover:text-pink-500 transition-colors"
+                    className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-400 hover:text-pink-500 transition-colors flex-shrink-0"
                     title="Share this list"
                   >
                     <Icons.Share2 className="w-5 h-5" />
                   </button>
                 </h2>
-                <p className="text-gray-500 dark:text-slate-400 mt-1">
+                <p className="text-gray-500 dark:text-slate-400 mt-1 truncate">
                   {selectedCategoryId 
                     ? `Manage your ${getCategoryName(selectedCategoryId)} collection` 
                     : 'Your entire collection in one place'}
@@ -742,7 +744,7 @@ export default function App() {
               </div>
               <button 
                 onClick={() => { resetProfileForm(); setIsAddProfileOpen(true); }}
-                className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 px-6 py-3 rounded-xl font-semibold shadow-lg shadow-gray-200/50 dark:shadow-none flex items-center gap-2 transition-all active:scale-95"
+                className="w-full md:w-auto bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 px-6 py-3 rounded-xl font-semibold shadow-lg shadow-gray-200/50 dark:shadow-none flex items-center justify-center gap-2 transition-all active:scale-95 flex-shrink-0"
               >
                 <Icons.Plus className="w-5 h-5" />
                 Add Profile
@@ -750,13 +752,13 @@ export default function App() {
            </div>
 
            {/* Filters */}
-           <div className="flex flex-col sm:flex-row gap-3 items-center bg-white dark:bg-slate-800 p-2 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm">
+           <div className="flex flex-col sm:flex-row gap-3 items-center bg-white dark:bg-slate-800 p-2 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm overflow-hidden">
               <div className="relative flex-1 w-full">
                 <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input 
                   type="text" 
                   placeholder="Search..." 
-                  className="w-full pl-10 pr-4 py-2 bg-transparent border-none focus:ring-0 text-gray-900 dark:text-white placeholder-gray-400"
+                  className="w-full pl-10 pr-4 py-2 bg-transparent border-none focus:ring-0 text-gray-900 dark:text-white placeholder-gray-400 min-w-0"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -780,7 +782,7 @@ export default function App() {
                  </select>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0 no-scrollbar">
+              <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0 no-scrollbar min-w-0">
                  {/* Mobile Category Selects - Split into Parent and Subcategory */}
                  <select 
                     className="md:hidden bg-gray-50 dark:bg-slate-700 border-none rounded-lg text-sm px-3 py-2 flex-1 min-w-[140px]"
@@ -820,7 +822,7 @@ export default function App() {
                    <option value="website">Web</option>
                  </select>
 
-                 <div className="flex items-center gap-2 px-2">
+                 <div className="flex items-center gap-2 px-2 flex-shrink-0">
                    <Icons.ArrowUpDown className="w-4 h-4 text-gray-400" />
                    <select 
                       className="bg-transparent border-none text-sm text-gray-700 dark:text-gray-200 cursor-pointer focus:ring-0"
@@ -888,12 +890,12 @@ export default function App() {
            {/* Platform Selector */}
            <div>
              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Select Platform</label>
-             <div className="flex gap-2">
+             <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                {PLATFORMS.map(p => (
                  <button
                    key={p.id}
                    onClick={() => setNewProfilePlatform(p.id)}
-                   className={`flex-1 flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
+                   className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
                      newProfilePlatform === p.id
                        ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20 text-pink-600 dark:text-pink-300'
                        : 'border-gray-200 dark:border-slate-700 text-gray-500 hover:border-gray-300'
