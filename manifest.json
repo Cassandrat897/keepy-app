@@ -1,19 +1,19 @@
 {
   "name": "Keepy Profile Manager",
   "short_name": "Keepy",
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3579/3579176.png",
+      "src": "https://i.ibb.co/ccYGcz7f/logo-icon.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3579/3579176.png",
+      "src": "https://i.ibb.co/ccYGcz7f/logo-icon.png",
       "sizes": "512x512",
       "type": "image/png"
     }
