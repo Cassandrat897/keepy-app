@@ -74,6 +74,7 @@ export default function App() {
   const [isManageCategoriesOpen, setIsManageCategoriesOpen] = useState(false); // New state for mobile management
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null); // Track which profile is being edited
 
   // Forms
   const [newProfileUsername, setNewProfileUsername] = useState('');
@@ -224,23 +225,49 @@ export default function App() {
   }, [categories, categorySort]);
 
   // --- Handlers ---
-  const handleAddProfile = () => {
+  const handleSaveProfile = () => {
     if (!newProfileUsername || !newProfileCategory) return;
     
     const cleanUser = cleanInputForPlatform(newProfileUsername, newProfilePlatform);
 
-    const newProfile: Profile = {
-      id: Date.now().toString(),
-      username: cleanUser,
-      platform: newProfilePlatform,
-      categoryId: newProfileCategory,
-      notes: newProfileNotes,
-      createdAt: Date.now(),
-    };
+    if (editingProfileId) {
+       // Update Existing Profile
+       setProfiles(prev => prev.map(p => 
+         p.id === editingProfileId ? {
+           ...p,
+           username: cleanUser,
+           platform: newProfilePlatform,
+           categoryId: newProfileCategory,
+           notes: newProfileNotes,
+           // Keep createdAt
+         } : p
+       ));
+    } else {
+       // Create New Profile
+       const newProfile: Profile = {
+         id: Date.now().toString(),
+         username: cleanUser,
+         platform: newProfilePlatform,
+         categoryId: newProfileCategory,
+         notes: newProfileNotes,
+         createdAt: Date.now(),
+       };
+       setProfiles([newProfile, ...profiles]);
+    }
 
-    setProfiles([newProfile, ...profiles]);
     setIsAddProfileOpen(false);
     resetProfileForm();
+  };
+
+  const handleStartEdit = (profile: Profile) => {
+    setNewProfileUsername(profile.username);
+    setNewProfilePlatform(profile.platform);
+    setNewProfileCategory(profile.categoryId);
+    setNewProfileNotes(profile.notes);
+    setEditingProfileId(profile.id);
+    
+    setIsPreviewOpen(false); // Close preview if open
+    setIsAddProfileOpen(true); // Open form
   };
 
   const resetProfileForm = () => {
@@ -248,6 +275,7 @@ export default function App() {
     setNewProfileNotes('');
     setNewProfileCategory('');
     setNewProfilePlatform('instagram');
+    setEditingProfileId(null);
   };
 
   const handleAddCategory = () => {
@@ -647,7 +675,7 @@ export default function App() {
                 </p>
               </div>
               <button 
-                onClick={() => setIsAddProfileOpen(true)}
+                onClick={() => { resetProfileForm(); setIsAddProfileOpen(true); }}
                 className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 px-6 py-3 rounded-xl font-semibold shadow-lg shadow-gray-200/50 dark:shadow-none flex items-center gap-2 transition-all active:scale-95"
               >
                 <Icons.Plus className="w-5 h-5" />
@@ -756,7 +784,7 @@ export default function App() {
                      profile={profile} 
                      category={categories.find(c => c.id === profile.categoryId)}
                      onClick={handleOpenPreview}
-                     onEdit={(e, p) => { e.stopPropagation(); handleOpenPreview(p); }}
+                     onEdit={(e, p) => { e.stopPropagation(); handleStartEdit(p); }}
                    />
                  ))}
                </div>
@@ -767,8 +795,12 @@ export default function App() {
 
       {/* --- Modals --- */}
       
-      {/* Add Profile Modal */}
-      <Modal isOpen={isAddProfileOpen} onClose={() => setIsAddProfileOpen(false)} title="Add Profile">
+      {/* Add/Edit Profile Modal */}
+      <Modal 
+        isOpen={isAddProfileOpen} 
+        onClose={() => { setIsAddProfileOpen(false); resetProfileForm(); }} 
+        title={editingProfileId ? "Edit Profile" : "Add Profile"}
+      >
          <div className="space-y-4">
            
            {/* Platform Selector */}
@@ -816,10 +848,10 @@ export default function App() {
            
            <div>
              <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Category</label>
-             <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto">
                 {displayCategories.flatMap(cat => [
-                   cat,
-                   ...cat.children
+                   { ...cat, displayName: cat.name, parentName: null },
+                   ...cat.children.map(sub => ({ ...sub, displayName: sub.name, parentName: cat.name }))
                 ]).map(cat => (
                   <button
                     key={cat.id}
@@ -827,18 +859,25 @@ export default function App() {
                     className={`p-2 rounded-lg border text-left text-sm flex items-center gap-2 transition-all ${
                        newProfileCategory === cat.id 
                        ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20 text-pink-700 dark:text-pink-300 ring-1 ring-pink-500' 
-                       : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
+                       : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
                     }`}
                   >
                     <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }}></div>
-                    <span className="truncate">{cat.name}</span>
+                    <div className="flex-1 min-w-0 flex flex-col">
+                        {cat.parentName && (
+                           <span className="text-[10px] text-gray-400 dark:text-slate-500 leading-none mb-0.5 truncate">
+                             {cat.parentName}
+                           </span>
+                        )}
+                        <span className="truncate font-medium">{cat.displayName}</span>
+                    </div>
                   </button>
                 ))}
                 <button 
                   onClick={() => { setIsAddProfileOpen(false); setIsAddCategoryOpen(true); }}
-                  className="p-2 rounded-lg border border-dashed border-gray-300 dark:border-slate-600 text-gray-500 hover:text-pink-500 hover:border-pink-400 flex items-center justify-center gap-1 text-sm"
+                  className="p-2 rounded-lg border border-dashed border-gray-300 dark:border-slate-600 text-gray-500 hover:text-pink-500 hover:border-pink-400 flex items-center justify-center gap-1 text-sm h-full min-h-[42px]"
                 >
-                  <Icons.Plus className="w-3 h-3" /> New
+                  <Icons.Plus className="w-3 h-3" /> New Category
                 </button>
              </div>
            </div>
@@ -854,11 +893,11 @@ export default function App() {
            </div>
 
            <button 
-             onClick={handleAddProfile}
+             onClick={handleSaveProfile}
              disabled={!newProfileUsername || !newProfileCategory}
              className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-pink-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
            >
-             Save Profile
+             {editingProfileId ? "Update Profile" : "Save Profile"}
            </button>
          </div>
       </Modal>
@@ -1032,10 +1071,7 @@ export default function App() {
               
               <button 
                 className="py-2.5 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-900 dark:text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-                onClick={() => {
-                   // Pre-fill edit form logic would go here
-                   alert("Edit functionality would open form with pre-filled data.");
-                }}
+                onClick={() => handleStartEdit(selectedProfile)}
               >
                 <Icons.Edit2 className="w-4 h-4" /> Edit
               </button>
