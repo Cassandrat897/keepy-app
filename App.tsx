@@ -5,6 +5,8 @@ import { Modal } from './components/Modal';
 import { ProfileCard } from './components/ProfileCard';
 
 // --- CONFIGURATION ---
+const APP_VERSION = '1.1'; // Update this when you deploy new changes to verify on mobile
+
 // Paste your logo URLs or Base64 strings inside the quotes below.
 const BRANDING = {
   // The small icon/symbol (used if full logos aren't provided, or for favicon style usage)
@@ -844,6 +846,9 @@ export default function App() {
              <Icons.Lock className="w-5 h-5" />
              <span>Lock App</span>
            </button>
+           <div className="text-center text-[10px] text-gray-300 dark:text-slate-600 font-mono">
+              v{APP_VERSION}
+           </div>
         </div>
       </aside>
 
@@ -1384,6 +1389,9 @@ export default function App() {
                         Restore Backup
                      </button>
                   </div>
+               </div>
+               <div className="text-center text-[10px] text-gray-300 dark:text-slate-600 font-mono mt-4">
+                  v{APP_VERSION}
                </div>
            </div>
         </div>
