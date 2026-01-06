@@ -94,6 +94,9 @@ export default function App() {
   const [newCategoryColor, setNewCategoryColor] = useState(PASTEL_COLORS[0]);
   const [newCategoryParent, setNewCategoryParent] = useState<string>('');
 
+  // File Input Ref for Import
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // --- Effects ---
   useEffect(() => {
     localStorage.setItem('keepy_categories', JSON.stringify(categories));
@@ -206,6 +209,58 @@ export default function App() {
     else if (value.includes('facebook.com')) setNewProfilePlatform('facebook');
     else if (value.includes('twitter.com') || value.includes('x.com')) setNewProfilePlatform('x');
     else if (value.includes('tiktok.com')) setNewProfilePlatform('tiktok');
+  };
+
+  // --- Backup & Restore Handlers ---
+  const handleExportData = () => {
+    const data = {
+      categories,
+      profiles,
+      version: 1,
+      exportedAt: Date.now()
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `keepy_backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportClick = () => {
+    if (window.confirm("Restoring a backup will REPLACE your current data. This cannot be undone. Are you sure?")) {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (json.categories && Array.isArray(json.categories) && json.profiles && Array.isArray(json.profiles)) {
+           setCategories(json.categories);
+           setProfiles(json.profiles);
+           alert("Data restored successfully!");
+           setIsManageCategoriesOpen(false); // Close mobile menu if open
+        } else {
+           alert("Invalid backup file format.");
+        }
+      } catch (err) {
+        alert("Error parsing backup file.");
+        console.error(err);
+      }
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsText(file);
   };
 
   // --- Computed ---
@@ -604,6 +659,15 @@ export default function App() {
   // --- Main App ---
   return (
     <div className="flex h-[100dvh] overflow-hidden">
+      {/* Hidden File Input for Import */}
+      <input 
+        type="file" 
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        className="hidden"
+        accept=".json"
+      />
+
       {/* --- Sidebar --- */}
       <aside className="w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 flex flex-col hidden md:flex">
         <div className="p-6 h-20 flex items-center">
@@ -750,6 +814,22 @@ export default function App() {
         </nav>
 
         <div className="p-4 border-t border-gray-200 dark:border-slate-800 space-y-2">
+            <div className="flex gap-2">
+               <button 
+                  onClick={handleExportData}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white bg-gray-50 dark:bg-slate-800/50 hover:bg-gray-100 dark:hover:bg-slate-800 py-2 rounded-lg transition-colors"
+                  title="Backup Data"
+               >
+                  <span>Export Data</span>
+               </button>
+               <button 
+                  onClick={handleImportClick}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white bg-gray-50 dark:bg-slate-800/50 hover:bg-gray-100 dark:hover:bg-slate-800 py-2 rounded-lg transition-colors"
+                  title="Restore Data"
+               >
+                  <span>Import</span>
+               </button>
+            </div>
            <button 
              onClick={() => setDarkMode(!darkMode)}
              className="flex items-center gap-3 text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white transition-colors w-full px-4 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800"
@@ -769,8 +849,8 @@ export default function App() {
 
       {/* --- Main Content --- */}
       <main className="flex-1 flex flex-col h-full bg-white/50 dark:bg-black/20 overflow-x-hidden min-w-0">
-        {/* Mobile Header - Added safe area padding */}
-        <div className="md:hidden flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        {/* Mobile Header - Bump to 32px */}
+        <div className="md:hidden flex items-center justify-between p-4 pt-[calc(env(safe-area-inset-top)+32px)] border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <div className="flex items-center gap-2">
             {renderLogo()}
           </div>
@@ -1198,9 +1278,9 @@ export default function App() {
       
       {/* Full Page Mobile Category Manager (Replaces Modal) */}
       {isManageCategoriesOpen && (
-        <div className="fixed inset-0 z-50 bg-white dark:bg-slate-900 flex flex-col animate-in slide-in-from-bottom-5 duration-300">
-           {/* Header with Safe Area Padding */}
-           <div className="pt-[max(16px,env(safe-area-inset-top))] px-4 pb-4 border-b border-gray-100 dark:border-slate-800 flex items-center gap-3">
+        <div className="fixed inset-0 z-40 bg-white dark:bg-slate-900 flex flex-col animate-in slide-in-from-bottom-5 duration-300">
+           {/* Header with Safe Area Padding - Bump to 32px to be safe */}
+           <div className="pt-[calc(env(safe-area-inset-top)+32px)] px-4 pb-4 border-b border-gray-100 dark:border-slate-800 flex items-center gap-3">
               <button 
                 onClick={() => setIsManageCategoriesOpen(false)}
                 className="p-2 -ml-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-full transition-colors"
@@ -1283,6 +1363,28 @@ export default function App() {
                     </div>
                  ))}
               </div>
+           </div>
+           
+           {/* Backup Controls for Mobile */}
+           <div className="p-4 border-t border-gray-100 dark:border-slate-800 pb-[calc(env(safe-area-inset-bottom)+16px)]">
+               <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Backup & Restore</h3>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">Save your data so you don't lose it if you delete the app.</p>
+                  <div className="flex gap-2">
+                     <button 
+                        onClick={handleExportData}
+                        className="flex-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-white py-2.5 rounded-lg text-xs font-medium hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors"
+                     >
+                        Export Backup
+                     </button>
+                     <button 
+                        onClick={handleImportClick}
+                        className="flex-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-white py-2.5 rounded-lg text-xs font-medium hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors"
+                     >
+                        Restore Backup
+                     </button>
+                  </div>
+               </div>
            </div>
         </div>
       )}
