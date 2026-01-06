@@ -80,6 +80,9 @@ export default function App() {
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null); // Track which profile is being edited
 
+  // Category Editing State
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+
   // Forms
   const [newProfileUsername, setNewProfileUsername] = useState('');
   const [newProfileDisplayName, setNewProfileDisplayName] = useState('');
@@ -338,29 +341,85 @@ export default function App() {
     setPickerExpandedCategoryIds([]);
   };
 
-  const handleAddCategory = () => {
+  // --- Category Management Handlers ---
+
+  const handleOpenCategoryModal = (category?: Category) => {
+    if (category) {
+        setEditingCategoryId(category.id);
+        setNewCategoryName(category.name);
+        setNewCategoryColor(category.color);
+        setNewCategoryParent(category.parentId || '');
+    } else {
+        setEditingCategoryId(null);
+        setNewCategoryName('');
+        setNewCategoryColor(PASTEL_COLORS[0]);
+        setNewCategoryParent('');
+    }
+    setIsAddCategoryOpen(true);
+  };
+
+  const handleSaveCategory = () => {
     if (!newCategoryName) return;
-    const newCategory: Category = {
-      id: Date.now().toString(),
-      name: newCategoryName,
-      color: newCategoryColor,
-      parentId: newCategoryParent || undefined,
-    };
-    setCategories([...categories, newCategory]);
-    
-    // Auto-expand parent if subcategory
+
+    let colorToUse = newCategoryColor;
+
+    // RULE: If it's a subcategory, it MUST inherit color from parent
     if (newCategoryParent) {
-      if (!expandedCategoryIds.includes(newCategoryParent)) {
-        setExpandedCategoryIds([...expandedCategoryIds, newCategoryParent]);
-      }
-      if (!pickerExpandedCategoryIds.includes(newCategoryParent)) {
-        setPickerExpandedCategoryIds([...pickerExpandedCategoryIds, newCategoryParent]);
-      }
+        const parent = categories.find(c => c.id === newCategoryParent);
+        if (parent) {
+            colorToUse = parent.color;
+        }
+    }
+
+    if (editingCategoryId) {
+        // Update Existing Category
+        const updatedCategories = categories.map(c => {
+            if (c.id === editingCategoryId) {
+                return { 
+                    ...c, 
+                    name: newCategoryName, 
+                    color: colorToUse, 
+                    parentId: newCategoryParent || undefined 
+                };
+            }
+            return c;
+        });
+        
+        // RULE: If this category is a parent, we must check if its color changed and update all children
+        // Simpler approach: Just force update all children of this category to match the new color
+        const finalCategories = updatedCategories.map(c => {
+            if (c.parentId === editingCategoryId) {
+                return { ...c, color: colorToUse };
+            }
+            return c;
+        });
+
+        setCategories(finalCategories);
+    } else {
+        // Create New Category
+        const newCategory: Category = {
+            id: Date.now().toString(),
+            name: newCategoryName,
+            color: colorToUse,
+            parentId: newCategoryParent || undefined,
+        };
+        setCategories([...categories, newCategory]);
+        
+        // Auto-expand parent if subcategory
+        if (newCategoryParent) {
+            if (!expandedCategoryIds.includes(newCategoryParent)) {
+                setExpandedCategoryIds([...expandedCategoryIds, newCategoryParent]);
+            }
+            if (!pickerExpandedCategoryIds.includes(newCategoryParent)) {
+                setPickerExpandedCategoryIds([...pickerExpandedCategoryIds, newCategoryParent]);
+            }
+        }
     }
 
     setIsAddCategoryOpen(false);
     setNewCategoryName('');
     setNewCategoryParent('');
+    setEditingCategoryId(null);
   };
 
   const handleDeleteProfile = (id: string) => {
@@ -553,7 +612,7 @@ export default function App() {
         
         <div className="px-4 py-2 space-y-2">
           <button 
-            onClick={() => setIsAddCategoryOpen(true)}
+            onClick={() => handleOpenCategoryModal()}
             className="w-full py-2 px-4 rounded-xl border-2 border-dashed border-gray-300 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:border-pink-400 hover:text-pink-500 transition-colors flex items-center justify-center gap-2 font-medium text-sm"
           >
             <Icons.Plus className="w-4 h-4" /> New Category
@@ -629,13 +688,22 @@ export default function App() {
                     <span className="w-3 h-3 rounded-full shadow-sm flex-shrink-0" style={{ backgroundColor: cat.color }}></span>
                     <span className="truncate">{cat.name}</span>
                   </button>
-                  <button 
-                     onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id); }}
-                     className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
-                     title="Delete Category"
-                  >
-                     <Icons.Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleOpenCategoryModal(cat); }}
+                        className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                        title="Edit Category"
+                      >
+                          <Icons.Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                         onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id); }}
+                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                         title="Delete Category"
+                      >
+                         <Icons.Trash2 className="w-4 h-4" />
+                      </button>
+                  </div>
                  </div>
                 
                 {/* Subcategories */}
@@ -656,13 +724,22 @@ export default function App() {
                                 <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: sub.color }}></div>
                                 <span className="truncate">{sub.name}</span>
                               </button>
-                              <button 
-                                 onClick={(e) => { e.stopPropagation(); handleDeleteCategory(sub.id); }}
-                                 className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
-                                 title="Delete Subcategory"
-                              >
-                                 <Icons.Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); handleOpenCategoryModal(sub); }}
+                                    className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                                    title="Edit Subcategory"
+                                  >
+                                      <Icons.Edit2 className="w-3 h-3" />
+                                  </button>
+                                  <button 
+                                     onClick={(e) => { e.stopPropagation(); handleDeleteCategory(sub.id); }}
+                                     className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                     title="Delete Subcategory"
+                                  >
+                                     <Icons.Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                              </div>
                           </div>
                       ))}
                     </div>
@@ -692,8 +769,8 @@ export default function App() {
 
       {/* --- Main Content --- */}
       <main className="flex-1 flex flex-col h-full bg-white/50 dark:bg-black/20 overflow-x-hidden min-w-0">
-        {/* Mobile Header */}
-        <div className="md:hidden flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        {/* Mobile Header - Added safe area padding */}
+        <div className="md:hidden flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <div className="flex items-center gap-2">
             {renderLogo()}
           </div>
@@ -1026,8 +1103,12 @@ export default function App() {
          </div>
       </Modal>
 
-      {/* Add Category Modal */}
-      <Modal isOpen={isAddCategoryOpen} onClose={() => setIsAddCategoryOpen(false)} title="New Category">
+      {/* Add/Edit Category Modal */}
+      <Modal 
+        isOpen={isAddCategoryOpen} 
+        onClose={() => { setIsAddCategoryOpen(false); setEditingCategoryId(null); }} 
+        title={editingCategoryId ? "Edit Category" : "New Category"}
+      >
           <div className="space-y-4">
              <div>
                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Category Name</label>
@@ -1040,39 +1121,50 @@ export default function App() {
                 />
              </div>
 
-             <div>
-               <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Color</label>
-               <div className="flex flex-wrap gap-3 mb-3 items-center">
-                 {PASTEL_COLORS.map(color => (
-                   <button
-                     key={color}
-                     onClick={() => setNewCategoryColor(color)}
-                     className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${newCategoryColor === color ? 'border-gray-900 dark:border-white scale-110 ring-2 ring-offset-2 ring-gray-200 dark:ring-slate-700' : 'border-transparent'}`}
-                     style={{ backgroundColor: color }}
-                   />
-                 ))}
-                 
-                 {/* Spectrum Color Picker */}
-                 <div 
-                   className="relative w-9 h-9 overflow-hidden rounded-full border-2 border-gray-200 dark:border-slate-700 group cursor-pointer shadow-sm hover:scale-110 transition-transform"
-                   style={{ background: 'conic-gradient(from 180deg, #FFB3BA, #FFDFBA, #FFFFBA, #BAFFC9, #BAE1FF, #E2BAFF, #C9C9FF, #FFB3BA)' }}
-                   title="Custom Color"
-                 >
-                    <input 
-                      type="color" 
-                      className="absolute inset-0 w-[200%] h-[200%] -top-1/2 -left-1/2 opacity-0 cursor-pointer"
-                      value={newCategoryColor}
-                      onChange={(e) => setNewCategoryColor(e.target.value)}
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                       {/* Optional checkmark if selected, but since it's custom, we can just show the spectrum */}
-                       {!PASTEL_COLORS.includes(newCategoryColor) && (
-                          <div className="w-2 h-2 bg-white rounded-full shadow-md"></div>
-                       )}
-                    </div>
+             {/* Color Picker: Only show if it's a Top Level Category (no parent selected) */}
+             {!newCategoryParent ? (
+                 <div>
+                   <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
+                      Color {editingCategoryId && categories.some(c => c.parentId === editingCategoryId) && <span className="text-xs font-normal text-gray-500 ml-1">(Updates all subcategories)</span>}
+                   </label>
+                   <div className="flex flex-wrap gap-3 mb-3 items-center">
+                     {PASTEL_COLORS.map(color => (
+                       <button
+                         key={color}
+                         onClick={() => setNewCategoryColor(color)}
+                         className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${newCategoryColor === color ? 'border-gray-900 dark:border-white scale-110 ring-2 ring-offset-2 ring-gray-200 dark:ring-slate-700' : 'border-transparent'}`}
+                         style={{ backgroundColor: color }}
+                       />
+                     ))}
+                     
+                     <div 
+                       className="relative w-9 h-9 overflow-hidden rounded-full border-2 border-gray-200 dark:border-slate-700 group cursor-pointer shadow-sm hover:scale-110 transition-transform"
+                       style={{ background: 'conic-gradient(from 180deg, #FFB3BA, #FFDFBA, #FFFFBA, #BAFFC9, #BAE1FF, #E2BAFF, #C9C9FF, #FFB3BA)' }}
+                       title="Custom Color"
+                     >
+                        <input 
+                          type="color" 
+                          className="absolute inset-0 w-[200%] h-[200%] -top-1/2 -left-1/2 opacity-0 cursor-pointer"
+                          value={newCategoryColor}
+                          onChange={(e) => setNewCategoryColor(e.target.value)}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                           {!PASTEL_COLORS.includes(newCategoryColor) && (
+                              <div className="w-2 h-2 bg-white rounded-full shadow-md"></div>
+                           )}
+                        </div>
+                     </div>
+                   </div>
                  </div>
-               </div>
-             </div>
+             ) : (
+                // Message when color is inherited
+                <div className="p-3 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-100 dark:border-slate-700 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full border border-gray-200 dark:border-slate-600" style={{ backgroundColor: categories.find(c => c.id === newCategoryParent)?.color }}></div>
+                    <div className="text-sm text-gray-500 dark:text-slate-400">
+                        Color inherited from <strong>{categories.find(c => c.id === newCategoryParent)?.name}</strong>
+                    </div>
+                </div>
+             )}
 
              <div>
                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Parent Category (Optional)</label>
@@ -1080,80 +1172,120 @@ export default function App() {
                  className="w-full p-3 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-pink-500 outline-none"
                  value={newCategoryParent}
                  onChange={(e) => setNewCategoryParent(e.target.value)}
+                 disabled={!!editingCategoryId && categories.some(c => c.parentId === editingCategoryId)} // Disable parent change if this category has children itself (prevent deep nesting issues for simplicity)
                >
                  <option value="">None (Top Level)</option>
-                 {displayCategories.map(c => (
+                 {displayCategories
+                   .filter(c => c.id !== editingCategoryId) // Prevent selecting self as parent
+                   .map(c => (
                    <option key={c.id} value={c.id}>{c.name}</option>
                  ))}
                </select>
+               {editingCategoryId && categories.some(c => c.parentId === editingCategoryId) && (
+                   <p className="text-xs text-gray-400 mt-1">Cannot change parent because this category has its own subcategories.</p>
+               )}
              </div>
 
              <button 
-               onClick={handleAddCategory}
+               onClick={handleSaveCategory}
                disabled={!newCategoryName}
                className="w-full py-3 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl font-bold hover:opacity-90 transition-all"
              >
-               Create Category
+               {editingCategoryId ? 'Update Category' : 'Create Category'}
              </button>
           </div>
       </Modal>
       
-      {/* Manage Categories Modal (Mobile Only primarily, but accessible) */}
-      <Modal isOpen={isManageCategoriesOpen} onClose={() => setIsManageCategoriesOpen(false)} title="Manage Categories">
-         <div className="space-y-4">
-            <button 
-              onClick={() => { setIsManageCategoriesOpen(false); setIsAddCategoryOpen(true); }}
-              className="w-full py-3 rounded-xl border-2 border-dashed border-gray-300 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:border-pink-400 hover:text-pink-500 transition-colors flex items-center justify-center gap-2 font-medium"
-            >
-              <Icons.Plus className="w-5 h-5" /> New Category
-            </button>
-            
-            <div className="max-h-[60vh] overflow-y-auto space-y-1">
-               {categories.length === 0 && (
-                  <p className="text-center text-gray-400 py-4">No categories yet.</p>
-               )}
-               {displayCategories.map(cat => (
-                  <div key={cat.id} className="space-y-1">
-                     <div className="flex items-center gap-2 p-2 rounded-xl bg-gray-50 dark:bg-slate-800/50">
-                        {cat.children.length > 0 && (
-                          <button onClick={() => toggleCategoryExpand(cat.id)} className="p-1 text-gray-400">
-                             {expandedCategoryIds.includes(cat.id) ? <Icons.ChevronDown className="w-4 h-4"/> : <Icons.ChevronRight className="w-4 h-4"/>}
-                          </button>
-                        )}
-                        <div className="flex-1 flex items-center gap-2">
-                           <span className="w-3 h-3 rounded-full" style={{backgroundColor: cat.color}}></span>
-                           <span className="font-medium text-gray-900 dark:text-white">{cat.name}</span>
-                        </div>
-                        <button 
-                           onClick={() => handleDeleteCategory(cat.id)}
-                           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-                        >
-                           <Icons.Trash2 className="w-4 h-4" />
-                        </button>
-                     </div>
-                     {expandedCategoryIds.includes(cat.id) && (
-                        <div className="ml-6 space-y-1 border-l-2 border-gray-100 dark:border-slate-800 pl-2">
-                           {cat.children.map(sub => (
-                              <div key={sub.id} className="flex items-center gap-2 p-2 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                                 <div className="flex-1 flex items-center gap-2">
-                                    <span className="w-2 h-2 rounded-full" style={{backgroundColor: sub.color}}></span>
-                                    <span className="text-sm text-gray-700 dark:text-gray-300">{sub.name}</span>
-                                 </div>
-                                 <button 
-                                    onClick={() => handleDeleteCategory(sub.id)}
-                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-                                 >
-                                    <Icons.Trash2 className="w-3.5 h-3.5" />
-                                 </button>
-                              </div>
-                           ))}
-                        </div>
-                     )}
-                  </div>
-               ))}
-            </div>
-         </div>
-      </Modal>
+      {/* Full Page Mobile Category Manager (Replaces Modal) */}
+      {isManageCategoriesOpen && (
+        <div className="fixed inset-0 z-50 bg-white dark:bg-slate-900 flex flex-col animate-in slide-in-from-bottom-5 duration-300">
+           {/* Header with Safe Area Padding */}
+           <div className="pt-[max(16px,env(safe-area-inset-top))] px-4 pb-4 border-b border-gray-100 dark:border-slate-800 flex items-center gap-3">
+              <button 
+                onClick={() => setIsManageCategoriesOpen(false)}
+                className="p-2 -ml-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+              >
+                 <Icons.ArrowLeft className="w-6 h-6 text-gray-900 dark:text-white" />
+              </button>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Manage Categories</h2>
+           </div>
+
+           <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <button 
+                onClick={() => handleOpenCategoryModal()}
+                className="w-full py-4 rounded-xl border-2 border-dashed border-gray-300 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:border-pink-400 hover:text-pink-500 transition-colors flex items-center justify-center gap-2 font-medium"
+              >
+                <Icons.Plus className="w-5 h-5" /> Add New Category
+              </button>
+              
+              <div className="space-y-2">
+                 {categories.length === 0 && (
+                    <div className="text-center py-10 text-gray-400">
+                       <p>No categories yet.</p>
+                       <p className="text-sm mt-1">Create one to get started!</p>
+                    </div>
+                 )}
+                 {displayCategories.map(cat => (
+                    <div key={cat.id} className="space-y-1">
+                       <div className="flex items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-slate-800/50 border border-transparent hover:border-gray-200 dark:hover:border-slate-700 transition-all">
+                          {cat.children.length > 0 && (
+                            <button onClick={() => toggleCategoryExpand(cat.id)} className="p-1 text-gray-400">
+                               {expandedCategoryIds.includes(cat.id) ? <Icons.ChevronDown className="w-5 h-5"/> : <Icons.ChevronRight className="w-5 h-5"/>}
+                            </button>
+                          )}
+                          <div className="flex-1 flex items-center gap-3">
+                             <span className="w-4 h-4 rounded-full shadow-sm" style={{backgroundColor: cat.color}}></span>
+                             <span className="font-semibold text-gray-900 dark:text-white">{cat.name}</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-1">
+                              <button 
+                                onClick={() => handleOpenCategoryModal(cat)}
+                                className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                              >
+                                 <Icons.Edit2 className="w-4 h-4" />
+                              </button>
+                              <button 
+                                 onClick={() => handleDeleteCategory(cat.id)}
+                                 className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                              >
+                                 <Icons.Trash2 className="w-4 h-4" />
+                              </button>
+                          </div>
+                       </div>
+                       
+                       {expandedCategoryIds.includes(cat.id) && (
+                          <div className="ml-4 pl-4 border-l-2 border-gray-100 dark:border-slate-800 space-y-1">
+                             {cat.children.map(sub => (
+                                <div key={sub.id} className="flex items-center gap-2 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800/30">
+                                   <div className="flex-1 flex items-center gap-3">
+                                      <span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{backgroundColor: sub.color}}></span>
+                                      <span className="text-gray-700 dark:text-gray-300 font-medium">{sub.name}</span>
+                                   </div>
+                                   <div className="flex items-center gap-1">
+                                      <button 
+                                        onClick={() => handleOpenCategoryModal(sub)}
+                                        className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg"
+                                      >
+                                         <Icons.Edit2 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button 
+                                         onClick={() => handleDeleteCategory(sub.id)}
+                                         className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                                      >
+                                         <Icons.Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                   </div>
+                                </div>
+                             ))}
+                          </div>
+                       )}
+                    </div>
+                 ))}
+              </div>
+           </div>
+        </div>
+      )}
 
       {/* Profile Preview/Details Modal */}
       {selectedProfile && (
