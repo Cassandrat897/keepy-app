@@ -21,7 +21,8 @@ import {
   Twitter,
   Globe,
   Video, // Using Video as proxy for TikTok
-  Lock
+  Lock,
+  Check
 } from 'lucide-react';
 
 export const Icons = {
@@ -46,5 +47,6 @@ export const Icons = {
   Twitter,
   Globe,
   Video,
-  Lock
+  Lock,
+  Check
 };

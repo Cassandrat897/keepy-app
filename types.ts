@@ -1,10 +1,16 @@
 export type Platform = 'instagram' | 'facebook' | 'tiktok' | 'x' | 'website';
 
+export interface Folder {
+  id: string;
+  name: string;
+}
+
 export interface Category {
   id: string;
   name: string;
   color: string;
   parentId?: string; // If undefined, it's a main category. If defined, it's a subcategory.
+  folderId?: string; // Optional: Belongs to a specific folder (Only for Top-Level categories)
 }
 
 export interface Profile {
@@ -17,7 +23,7 @@ export interface Profile {
   createdAt: number;
 }
 
-export type SortOption = 'a-z' | 'z-a' | 'newest' | 'oldest';
+export type SortOption = 'a-z' | 'z-a' | 'newest' | 'oldest' | 'color';
 
 export const PASTEL_COLORS = [
   '#FFB3BA', // Red/Pink

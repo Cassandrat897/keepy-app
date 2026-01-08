@@ -5,6 +5,7 @@ import { Icons } from './Icon';
 interface ProfileCardProps {
   profile: Profile;
   category?: Category;
+  path?: string; // New prop for breadcrumbs
   onClick: (profile: Profile) => void;
   onEdit: (e: React.MouseEvent, profile: Profile) => void;
 }
@@ -48,7 +49,7 @@ const PlatformIcon = ({ platform }: { platform: Platform }) => {
   }
 };
 
-export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, onClick, onEdit }) => {
+export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, path, onClick, onEdit }) => {
   // Use displayName if available, otherwise format the username/url
   const displayTitle = profile.displayName 
     ? profile.displayName 
@@ -73,13 +74,17 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, onC
         <h3 className="font-semibold text-gray-900 dark:text-white truncate" title={profile.displayName || profile.username}>
           {displayTitle}
         </h3>
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 dark:text-slate-500">
-            {profile.platform === 'x' ? 'X' : profile.platform}
-          </span>
-        </div>
+        
+        {/* Breadcrumb Path - Replaces Platform Tag */}
+        {path && (
+            <p className="text-[10px] text-gray-400 dark:text-slate-500 font-medium truncate mt-0.5">
+                {path}
+            </p>
+        )}
+        
+        {/* Optional: Notes Snippet (Only if no path or very long? Let's keep both for now but smaller) */}
         {profile.notes && (
-           <p className="text-xs text-gray-500 dark:text-slate-400 truncate mt-1">
+           <p className="text-[10px] text-gray-500 dark:text-slate-400 truncate mt-1 italic opacity-80">
              {profile.notes}
            </p>
         )}
