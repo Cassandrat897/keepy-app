@@ -5,7 +5,7 @@ import { Modal } from './components/Modal';
 import { ProfileCard } from './components/ProfileCard';
 
 // --- CONFIGURATION ---
-const APP_VERSION = '1.3.0'; // Enhanced Move Clarity
+const APP_VERSION = '1.3.7'; // Social Link Update (Facebook)
 
 // Paste your logo URLs or Base64 strings inside the quotes below.
 const BRANDING = {
@@ -31,7 +31,7 @@ const FilterPill = ({
   value, 
   onChange, 
   options, 
-  isActive = false,
+  isActive = false, 
   variant = 'default' 
 }: {
   icon: any,
@@ -141,6 +141,7 @@ export default function App() {
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [isManageCategoriesOpen, setIsManageCategoriesOpen] = useState(false); // Mobile Menu
   const [isManageFoldersOpen, setIsManageFoldersOpen] = useState(false); // New Folder Manager
+  const [isSupportOpen, setIsSupportOpen] = useState(false); // Support Page
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   
@@ -915,6 +916,9 @@ export default function App() {
                <button onClick={handleExportData} className="flex-1 text-xs py-2 bg-gray-50 dark:bg-slate-800/50 rounded-lg">Export</button>
                <button onClick={handleImportClick} className="flex-1 text-xs py-2 bg-gray-50 dark:bg-slate-800/50 rounded-lg">Import</button>
             </div>
+           <button onClick={() => setIsSupportOpen(true)} className="flex items-center gap-3 w-full px-4 py-2 rounded-xl hover:bg-pink-50 text-pink-500">
+             <Icons.Heart className="w-5 h-5" /> <span>Support</span>
+           </button>
            <button onClick={() => setDarkMode(!darkMode)} className="flex items-center gap-3 w-full px-4 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-600 dark:text-slate-400">
              {darkMode ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />} <span>Theme</span>
            </button>
@@ -929,6 +933,7 @@ export default function App() {
           <div className="flex items-center gap-2">{renderLogo()}</div>
           <div className="flex items-center gap-3">
              <button onClick={() => setIsManageCategoriesOpen(true)} className="p-2 text-gray-500 hover:text-pink-500 rounded-lg hover:bg-gray-100"><Icons.FolderOpen className="w-6 h-6" /></button>
+             <button onClick={() => setIsSupportOpen(true)} className="p-2 text-pink-500 rounded-lg hover:bg-pink-50"><Icons.Heart className="w-6 h-6" /></button>
             <button onClick={() => setDarkMode(!darkMode)} className="p-2 text-gray-500 rounded-lg hover:bg-gray-100">{darkMode ? <Icons.Sun className="w-6 h-6" /> : <Icons.Moon className="w-6 h-6" />}</button>
             <button onClick={handleLogout} className="p-2 text-gray-500 rounded-lg hover:bg-gray-100"><Icons.Lock className="w-6 h-6" /></button>
           </div>
@@ -1072,6 +1077,94 @@ export default function App() {
       </main>
 
       {/* --- Modals (Keep existing content) --- */}
+      {/* Support Page Overlay */}
+      {isSupportOpen && (
+        <div className="fixed inset-0 z-50 bg-white dark:bg-slate-900 flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between pt-[calc(env(safe-area-inset-top)+16px)]">
+            <div className="flex items-center gap-2">
+                {/* Logo or Icon */}
+                <div className="w-8 h-8 bg-gradient-to-tr from-pink-500 to-violet-500 rounded-lg flex items-center justify-center text-white shadow-lg shadow-pink-500/20">
+                    <Icons.Heart className="w-5 h-5 fill-current" />
+                </div>
+                <span className="font-bold text-lg text-gray-900 dark:text-white">Support Keepy</span>
+            </div>
+            <button onClick={() => setIsSupportOpen(false)} className="p-2 bg-gray-100 dark:bg-slate-800 rounded-full hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors">
+                <Icons.X className="w-5 h-5" />
+            </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 md:p-12">
+            <div className="max-w-2xl mx-auto space-y-10">
+                {/* Socials Section */}
+                <div className="text-center space-y-6">
+                    <div>
+                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Connect with us</h2>
+                        <p className="text-gray-500 dark:text-gray-400">Join our community and stay updated with the latest features.</p>
+                    </div>
+
+                    <div className="flex flex-col gap-4 max-w-sm mx-auto w-full">
+                        {/* 1. Website */}
+                        <a href="https://keepy-the-app.vercel.app/" target="_blank" className="flex items-center gap-4 p-4 rounded-2xl bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 hover:shadow-md transition-all group">
+                            <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
+                                <Icons.Globe className="w-5 h-5" />
+                            </div>
+                            <span className="font-semibold text-gray-900 dark:text-white">Visit Website</span>
+                            <Icons.ExternalLink className="w-4 h-4 ml-auto text-gray-400" />
+                        </a>
+
+                        {/* 2. Email */}
+                        <a href="mailto:keepytheapp@outlook.com" className="flex items-center gap-4 p-4 rounded-2xl bg-gray-50 dark:bg-slate-800 border border-gray-100 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700 hover:shadow-md transition-all group">
+                            <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400 group-hover:scale-110 transition-transform">
+                                <Icons.Mail className="w-5 h-5" />
+                            </div>
+                            <span className="font-semibold text-gray-900 dark:text-white truncate">keepytheapp@outlook.com</span>
+                        </a>
+                    </div>
+                    
+                    {/* 3. Social Icons Row */}
+                    <div className="flex items-center justify-center gap-6 py-2">
+                        <a href="https://instagram.com/keepytheapp" target="_blank" className="p-4 bg-pink-50 dark:bg-pink-900/10 text-pink-600 rounded-full hover:scale-110 hover:shadow-lg hover:shadow-pink-500/20 transition-all border border-pink-100 dark:border-pink-900/20" title="Instagram">
+                            <Icons.Instagram className="w-6 h-6" />
+                        </a>
+                        <a href="https://x.com/keepytheapp" target="_blank" className="p-4 bg-black dark:bg-slate-800 text-white dark:text-white rounded-full hover:scale-110 hover:shadow-lg transition-all border border-gray-800 dark:border-slate-700" title="X (Twitter)">
+                            <Icons.TwitterX className="w-6 h-6" />
+                        </a>
+                        <a href="https://www.facebook.com/share/16owWT3X9k/?mibextid=wwXIfr" target="_blank" className="p-4 bg-blue-50 dark:bg-blue-900/10 text-blue-600 rounded-full hover:scale-110 hover:shadow-lg hover:shadow-blue-500/20 transition-all border border-blue-100 dark:border-blue-900/20" title="Facebook">
+                            <Icons.Facebook className="w-6 h-6" />
+                        </a>
+                        <a href="https://tiktok.com/@keepytheapp" target="_blank" className="p-4 bg-gray-100 dark:bg-slate-800 text-black dark:text-white rounded-full hover:scale-110 hover:shadow-lg transition-all border border-gray-200 dark:border-slate-700" title="TikTok">
+                            <Icons.TikTok className="w-6 h-6" />
+                        </a>
+                    </div>
+                </div>
+
+                {/* 4. Buy Me A Coffee Section */}
+                <div className="relative overflow-hidden bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/10 p-8 rounded-3xl border border-yellow-100 dark:border-yellow-900/30 text-center space-y-6 shadow-sm">
+                    <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 bg-yellow-200/50 rounded-full blur-3xl"></div>
+                    <div className="absolute bottom-0 left-0 -mb-8 -ml-8 w-32 h-32 bg-orange-200/50 rounded-full blur-3xl"></div>
+                    
+                    <div className="relative z-10">
+                        <div className="w-16 h-16 bg-white dark:bg-yellow-900/40 rounded-full flex items-center justify-center mx-auto text-yellow-500 dark:text-yellow-400 shadow-sm mb-4">
+                            <Icons.Coffee className="w-8 h-8" />
+                        </div>
+                        <div>
+                            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Love Keepy?</h3>
+                            <p className="text-lg font-medium text-gray-700 dark:text-gray-300">☁️ Buy me a coffee & help Keepy grow ✨</p>
+                        </div>
+                        <div className="pt-4">
+                            <a href="https://buymeacoffee.com/keepy" target="_blank" className="inline-flex items-center gap-2 px-8 py-4 bg-[#FFDD00] text-black font-bold text-lg rounded-full hover:shadow-lg hover:shadow-yellow-500/20 hover:scale-105 transition-all transform">
+                                <Icons.Coffee className="w-5 h-5" />
+                                <span>Buy me a coffee</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </div>
+      )}
+
       {/* Profile Modal */}
       <Modal isOpen={isAddProfileOpen} onClose={() => { setIsAddProfileOpen(false); resetProfileForm(); }} title={editingProfileId ? "Edit Profile" : "Add Profile"}>
          <div className="space-y-4">
@@ -1449,7 +1542,7 @@ export default function App() {
                                                 <div className="flex items-center gap-2">
                                                     {c.children.length > 0 && (
                                                         <button onClick={() => toggleCategoryExpand(c.id)} className="text-gray-400">
-                                                            {expandedCategoryIds.includes(c.id) ? <Icons.ChevronDown className="w-4 h-4"/> : <Icons.ChevronRight className="w-4 h-4"/>}
+                                                            {expandedCategoryIds.includes(c.id) ? <Icons.ChevronDown className="w-3 h-3" /> : <Icons.ChevronRight className="w-3 h-3" />}
                                                         </button>
                                                     )}
                                                     <div className="w-3 h-3 rounded-full" style={{backgroundColor: c.color}}></div>

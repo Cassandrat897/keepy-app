@@ -21,14 +21,13 @@ const PlatformIcon = ({ platform }: { platform: Platform }) => {
     case 'x':
       return (
         <div className="w-12 h-12 rounded-full bg-black flex-shrink-0 flex items-center justify-center text-white shadow-sm border border-gray-800">
-          {/* Using Unicode Double-Struck Capital X which closely resembles the logo */}
-          <span className="text-2xl font-bold leading-none mt-[-2px]">𝕏</span>
+          <Icons.TwitterX className="w-5 h-5" />
         </div>
       );
     case 'tiktok':
       return (
         <div className="w-12 h-12 rounded-full bg-black flex-shrink-0 flex items-center justify-center text-white shadow-sm border border-gray-800">
-          <Icons.Video className="w-6 h-6" />
+          <Icons.TikTok className="w-6 h-6" />
         </div>
       );
     case 'website':
