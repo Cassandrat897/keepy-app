@@ -26,7 +26,8 @@ import {
   Heart,
   Mail,
   Coffee,
-  X
+  X,
+  MapPin
 } from 'lucide-react';
 
 // Custom TikTok Icon (Music Note style)
@@ -90,6 +91,7 @@ export const Icons = {
   Mail,
   Coffee,
   X,
+  MapPin,
   TikTok,
   TwitterX
 };

@@ -1,4 +1,4 @@
-export type Platform = 'instagram' | 'facebook' | 'tiktok' | 'x' | 'website';
+export type Platform = 'instagram' | 'facebook' | 'tiktok' | 'x' | 'website' | 'google-maps';
 
 export interface Folder {
   id: string;

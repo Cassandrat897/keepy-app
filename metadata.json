@@ -1,5 +1,6 @@
 {
   "name": "Keepy",
   "description": "Organize your favorite Instagram accounts into beautiful, custom-colored categories with notes and sorting.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": []
 }

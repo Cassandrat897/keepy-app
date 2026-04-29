@@ -5,7 +5,7 @@ import { Modal } from './components/Modal';
 import { ProfileCard } from './components/ProfileCard';
 
 // --- CONFIGURATION ---
-const APP_VERSION = '1.3.7'; // Social Link Update (Facebook)
+const APP_VERSION = '1.3.8'; // Social Link Update (Google Maps)
 
 // Paste your logo URLs or Base64 strings inside the quotes below.
 const BRANDING = {
@@ -284,6 +284,7 @@ export default function App() {
       case 'x': return `https://x.com/${profile.username}`;
       case 'tiktok': return `https://tiktok.com/@${profile.username.replace('@', '')}`;
       case 'website': return profile.username.startsWith('http') ? profile.username : `https://${profile.username}`;
+      case 'google-maps': return profile.username.startsWith('http') ? profile.username : `https://google.com/maps/search/?api=1&query=${encodeURIComponent(profile.username)}`;
       default: return '#';
     }
   };
@@ -313,7 +314,7 @@ export default function App() {
 
   const cleanInputForPlatform = (input: string, platform: Platform): string => {
     let clean = input.trim();
-    if (platform === 'website') return clean;
+    if (platform === 'website' || platform === 'google-maps') return clean;
     if (clean.startsWith('http')) {
       if (platform === 'facebook' && clean.includes('facebook.com/')) {
          const afterDomain = clean.split('facebook.com/')[1];
@@ -338,6 +339,7 @@ export default function App() {
     else if (value.includes('facebook.com')) setNewProfilePlatform('facebook');
     else if (value.includes('twitter.com') || value.includes('x.com')) setNewProfilePlatform('x');
     else if (value.includes('tiktok.com')) setNewProfilePlatform('tiktok');
+    else if (value.includes('google.com/maps') || value.includes('goo.gl/maps')) setNewProfilePlatform('google-maps');
   };
 
   const handleExportData = () => {
@@ -1022,7 +1024,8 @@ export default function App() {
                         { value: 'facebook', label: 'Facebook' },
                         { value: 'x', label: 'X' },
                         { value: 'tiktok', label: 'TikTok' },
-                        { value: 'website', label: 'Website' }
+                        { value: 'website', label: 'Website' },
+                        { value: 'google-maps', label: 'Google Maps' }
                     ]}
                     isActive={platformFilter !== 'all'}
                  />
@@ -1171,8 +1174,10 @@ export default function App() {
            <div>
              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Platform</label>
              <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                {['instagram','facebook','x','tiktok','website'].map(p => (
-                   <button key={p} onClick={() => setNewProfilePlatform(p as Platform)} className={`px-4 py-2 rounded-lg border text-sm capitalize whitespace-nowrap ${newProfilePlatform === p ? 'bg-pink-50 border-pink-500 text-pink-600' : 'border-gray-200'}`}>{p === 'x' ? 'X' : p}</button>
+                {['instagram','facebook','x','tiktok','website','google-maps'].map(p => (
+                   <button key={p} onClick={() => setNewProfilePlatform(p as Platform)} className={`px-4 py-2 rounded-lg border text-sm capitalize whitespace-nowrap ${newProfilePlatform === p ? 'bg-pink-50 border-pink-500 text-pink-600' : 'border-gray-200'}`}>
+                      {p === 'x' ? 'X' : p === 'google-maps' ? 'Google Maps' : p}
+                   </button>
                 ))}
              </div>
            </div>

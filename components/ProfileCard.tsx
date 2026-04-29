@@ -36,6 +36,12 @@ const PlatformIcon = ({ platform }: { platform: Platform }) => {
           <Icons.Globe className="w-6 h-6" />
         </div>
       );
+    case 'google-maps':
+      return (
+        <div className="w-12 h-12 rounded-full bg-red-500 flex-shrink-0 flex items-center justify-center text-white shadow-sm">
+          <Icons.MapPin className="w-6 h-6" />
+        </div>
+      );
     case 'instagram':
     default:
       return (
