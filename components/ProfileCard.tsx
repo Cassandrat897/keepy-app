@@ -55,12 +55,31 @@ const PlatformIcon = ({ platform }: { platform: Platform }) => {
 };
 
 export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, path, onClick, onEdit }) => {
-  // Use displayName if available, otherwise format the username/url
-  const displayTitle = profile.displayName 
-    ? profile.displayName 
-    : (profile.platform === 'website' 
-        ? profile.username.replace(/^https?:\/\/(www\.)?/, '').split('/')[0] 
-        : `@${profile.username}`);
+  const getDisplayTitle = () => {
+    if (profile.displayName) return profile.displayName;
+    
+    if (profile.platform === 'website') {
+      return profile.username.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
+    }
+    
+    if (profile.platform === 'google-maps') {
+      try {
+        if (profile.username.includes('/place/')) {
+          const parts = profile.username.split('/place/')[1].split('/')[0];
+          return decodeURIComponent(parts.replace(/\+/g, ' '));
+        } else if (profile.username.includes('query=') || profile.username.includes('q=')) {
+          const url = new URL(profile.username.startsWith('http') ? profile.username : `https://${profile.username}`);
+          const q = url.searchParams.get('query') || url.searchParams.get('q');
+          if (q) return decodeURIComponent(q.replace(/\+/g, ' '));
+        }
+      } catch (e) {}
+      return "Google Maps Location";
+    }
+
+    return `@${profile.username}`;
+  };
+
+  const displayTitle = getDisplayTitle();
 
   return (
     <div 

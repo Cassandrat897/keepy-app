@@ -5,7 +5,7 @@ import { Modal } from './components/Modal';
 import { ProfileCard } from './components/ProfileCard';
 
 // --- CONFIGURATION ---
-const APP_VERSION = '1.3.8'; // Social Link Update (Google Maps)
+const APP_VERSION = '1.3.13'; // Conditional Display Name
 
 // Paste your logo URLs or Base64 strings inside the quotes below.
 const BRANDING = {
@@ -335,11 +335,31 @@ export default function App() {
 
   const handleProfileInput = (value: string) => {
     setNewProfileUsername(value);
-    if (value.includes('instagram.com')) setNewProfilePlatform('instagram');
-    else if (value.includes('facebook.com')) setNewProfilePlatform('facebook');
-    else if (value.includes('twitter.com') || value.includes('x.com')) setNewProfilePlatform('x');
-    else if (value.includes('tiktok.com')) setNewProfilePlatform('tiktok');
-    else if (value.includes('google.com/maps') || value.includes('goo.gl/maps')) setNewProfilePlatform('google-maps');
+    
+    let detectedPlatform = newProfilePlatform;
+    if (value.includes('instagram.com')) detectedPlatform = 'instagram';
+    else if (value.includes('facebook.com')) detectedPlatform = 'facebook';
+    else if (value.includes('twitter.com') || value.includes('x.com')) detectedPlatform = 'x';
+    else if (value.includes('tiktok.com')) detectedPlatform = 'tiktok';
+    else if (value.includes('google.com/maps') || value.includes('maps.google.com') || value.includes('goo.gl/maps') || value.includes('maps.app.goo.gl')) detectedPlatform = 'google-maps';
+    
+    if (detectedPlatform !== newProfilePlatform) {
+      setNewProfilePlatform(detectedPlatform);
+    }
+
+    if (detectedPlatform === 'google-maps' && !newProfileDisplayName) {
+      try {
+        if (value.includes('/place/')) {
+          const parts = value.split('/place/')[1].split('/')[0];
+          const decoded = decodeURIComponent(parts.replace(/\+/g, ' '));
+          if (decoded) setNewProfileDisplayName(decoded);
+        } else if (value.includes('query=') || value.includes('q=')) {
+          const url = new URL(value.startsWith('http') ? value : `https://${value}`);
+          const q = url.searchParams.get('query') || url.searchParams.get('q');
+          if (q) setNewProfileDisplayName(decodeURIComponent(q.replace(/\+/g, ' ')));
+        }
+      } catch (e) {}
+    }
   };
 
   const handleExportData = () => {
@@ -536,7 +556,8 @@ export default function App() {
   };
 
   const handleSaveProfile = () => {
-    if (!newProfileUsername || !newProfileCategory) return;
+    const isNameRequired = newProfilePlatform === 'google-maps' || newProfilePlatform === 'facebook';
+    if (!newProfileUsername || !newProfileCategory || (isNameRequired && !newProfileDisplayName.trim())) return;
     const cleanUser = cleanInputForPlatform(newProfileUsername, newProfilePlatform);
     if (editingProfileId) {
        setProfiles(prev => prev.map(p => p.id === editingProfileId ? { ...p, username: cleanUser, displayName: newProfileDisplayName, platform: newProfilePlatform, categoryId: newProfileCategory, notes: newProfileNotes } : p));
@@ -1182,11 +1203,13 @@ export default function App() {
              </div>
            </div>
            <div>
-             <label className="block text-sm font-medium mb-1">Username/URL</label>
+             <label className="block text-sm font-medium mb-1">Username/URL <span className="text-red-500">*</span></label>
              <input type="text" className="w-full p-3 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 outline-none" placeholder="Username" value={newProfileUsername} onChange={(e) => handleProfileInput(e.target.value)} />
            </div>
            <div>
-             <label className="block text-sm font-medium mb-1">Display Name</label>
+             <label className="flex items-center justify-between text-sm font-medium mb-1">
+               <span>Display Name {['google-maps', 'facebook'].includes(newProfilePlatform) && <span className="text-red-500">*</span>}</span>
+             </label>
              <input type="text" className="w-full p-3 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 outline-none" value={newProfileDisplayName} onChange={(e) => setNewProfileDisplayName(e.target.value)} />
            </div>
            
@@ -1272,7 +1295,7 @@ export default function App() {
              <label className="block text-sm font-medium mb-1">Notes</label>
              <textarea className="w-full p-3 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 outline-none h-20" value={newProfileNotes} onChange={(e) => setNewProfileNotes(e.target.value)} />
            </div>
-           <button onClick={handleSaveProfile} disabled={!newProfileUsername || !newProfileCategory} className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">Save Profile</button>
+           <button onClick={handleSaveProfile} disabled={!newProfileUsername || !newProfileCategory || (['google-maps', 'facebook'].includes(newProfilePlatform) && !newProfileDisplayName.trim())} className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">Save Profile</button>
          </div>
       </Modal>
 

@@ -4,19 +4,27 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "tsx server.ts",
+    "start": "node dist/server.cjs",
+    "build": "vite build && esbuild server.ts --platform=node --packages=external --bundle --format=cjs --outfile=dist/server.cjs",
     "preview": "vite preview"
   },
   "dependencies": {
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.2.2",
     "vite": "^5.2.0"
   }
