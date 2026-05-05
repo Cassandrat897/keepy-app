@@ -3,12 +3,15 @@ import { Category, Profile, SortOption, PASTEL_COLORS, Platform, Folder } from '
 import { Icons } from './components/Icon';
 import { Modal } from './components/Modal';
 import { ProfileCard } from './components/ProfileCard';
+import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, getDocFromServer, query, where } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
 const APP_VERSION = '1.3.13'; // Conditional Display Name
 
 // Paste your logo URLs or Base64 strings inside the quotes below.
-const BRANDING = {
+export const BRANDING = {
   // The small icon/symbol (used if full logos aren't provided, or for favicon style usage)
   icon: "https://i.ibb.co/ccYGcz7f/logo-icon.png", 
   
@@ -77,38 +80,15 @@ const FilterPill = ({
 
 export default function App() {
   // --- Auth State ---
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('keepy_auth') === 'true';
-    }
-    return false;
-  });
-  const [loginCode, setLoginCode] = useState('');
+  const [user, setUser] = useState<User | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [isMigrating, setIsMigrating] = useState(false);
   const [loginError, setLoginError] = useState('');
 
   // --- App State ---
-  const [folders, setFolders] = useState<Folder[]>(() => {
-    const saved = localStorage.getItem('keepy_folders');
-    return saved ? JSON.parse(saved) : INITIAL_FOLDERS;
-  });
-
-  const [categories, setCategories] = useState<Category[]>(() => {
-    const saved = localStorage.getItem('keepy_categories');
-    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
-  });
-  
-  const [profiles, setProfiles] = useState<Profile[]>(() => {
-    const saved = localStorage.getItem('keepy_profiles');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return parsed.map((p: any) => ({
-        ...p,
-        // Migration: Ensure platform exists and migrate twitter -> x
-        platform: (p.platform === 'twitter' ? 'x' : p.platform) || 'instagram'
-      }));
-    }
-    return INITIAL_PROFILES;
-  });
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
 
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -142,6 +122,7 @@ export default function App() {
   const [isManageCategoriesOpen, setIsManageCategoriesOpen] = useState(false); // Mobile Menu
   const [isManageFoldersOpen, setIsManageFoldersOpen] = useState(false); // New Folder Manager
   const [isSupportOpen, setIsSupportOpen] = useState(false); // Support Page
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false); // Profile Modal
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   
@@ -178,18 +159,149 @@ export default function App() {
   // File Input Ref for Import
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Effects ---
+  const [totalUsers, setTotalUsers] = useState<number | null>(null);
+
+  // --- Local Data Migration ---
   useEffect(() => {
-    localStorage.setItem('keepy_folders', JSON.stringify(folders));
-  }, [folders]);
+    if (!user) return;
+    
+    const migrateLocalData = async () => {
+      const savedFolders = localStorage.getItem('keepy_folders');
+      const savedCategories = localStorage.getItem('keepy_categories');
+      const savedProfiles = localStorage.getItem('keepy_profiles');
+      
+      if (!savedFolders && !savedCategories && !savedProfiles) return;
+      
+      setIsMigrating(true);
+      try {
+        let allItems: any[] = [];
+        
+        if (savedFolders) {
+          const folders: Folder[] = JSON.parse(savedFolders);
+          folders.forEach(f => allItems.push({ type: 'folders', id: f.id, data: { name: f.name, userId: user.uid } }));
+        }
+        if (savedCategories) {
+          const categories: Category[] = JSON.parse(savedCategories);
+          categories.forEach(c => allItems.push({ type: 'categories', id: c.id, data: { name: c.name, color: c.color, parentId: c.parentId || '', folderId: c.folderId || '', userId: user.uid } }));
+        }
+        if (savedProfiles) {
+          const profiles: Profile[] = JSON.parse(savedProfiles);
+          profiles.forEach(p => allItems.push({ type: 'profiles', id: p.id, data: { username: p.username, displayName: p.displayName || '', platform: p.platform || 'website', categoryId: p.categoryId || '', notes: p.notes || '', createdAt: p.createdAt || Date.now(), userId: user.uid } }));
+        }
+        
+        // Chunk by 400 for batches
+        for (let i = 0; i < allItems.length; i += 400) {
+           const chunk = allItems.slice(i, i + 400);
+           const batch = writeBatch(db);
+           chunk.forEach(item => {
+               batch.set(doc(db, item.type, item.id), item.data);
+           });
+           await batch.commit();
+        }
+        
+        // Clear local storage after successful migration
+        localStorage.removeItem('keepy_folders');
+        localStorage.removeItem('keepy_categories');
+        localStorage.removeItem('keepy_profiles');
+        localStorage.removeItem('keepy_auth');
+        
+        console.log(`Migrated ${allItems.length} items from local storage to Firebase.`);
+      } catch (e) {
+        console.error("Migration failed:", e);
+      } finally {
+        setIsMigrating(false);
+      }
+    };
+    
+    migrateLocalData();
+  }, [user]);
+
+  // --- Firebase Setup & Sync ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      setAuthChecking(false);
+
+      if (currentUser) {
+         try {
+             // Create or update user
+             const userRef = doc(db, 'users', currentUser.uid);
+             const userSnap = await getDocFromServer(userRef).catch(() => null);
+             if (!userSnap || !userSnap.exists()) {
+                 await setDoc(userRef, {
+                     email: currentUser.email || '',
+                     createdAt: Date.now(),
+                     lastLogin: Date.now()
+                 });
+             } else {
+                 await setDoc(userRef, {
+                     lastLogin: Date.now()
+                 }, { merge: true });
+             }
+         } catch (e) {
+             console.error("Failed to sync user:", e);
+         }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem('keepy_categories', JSON.stringify(categories));
-  }, [categories]);
+    if (user?.email === 'cassandrat897@gmail.com') {
+      const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+         setTotalUsers(snapshot.size);
+      }, (e) => {
+         console.error("Could not fetch total users:", e);
+      });
+      return () => unsub();
+    }
+  }, [user]);
 
   useEffect(() => {
-    localStorage.setItem('keepy_profiles', JSON.stringify(profiles));
-  }, [profiles]);
+    if (!user) {
+      setFolders([]);
+      setCategories([]);
+      setProfiles([]);
+      return;
+    }
+
+    const unsubFolders = onSnapshot(query(collection(db, 'folders'), where('userId', '==', user.uid)), (snapshot) => {
+      const dbFolders: Folder[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        dbFolders.push({ id: doc.id, name: data.name, userId: data.userId });
+      });
+      setFolders(dbFolders);
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'folders'));
+
+    const unsubCategories = onSnapshot(query(collection(db, 'categories'), where('userId', '==', user.uid)), (snapshot) => {
+      const dbCategories: Category[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        dbCategories.push({
+          id: doc.id, name: data.name, color: data.color, parentId: data.parentId, folderId: data.folderId, userId: data.userId
+        });
+      });
+      setCategories(dbCategories);
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'categories'));
+
+    const unsubProfiles = onSnapshot(query(collection(db, 'profiles'), where('userId', '==', user.uid)), (snapshot) => {
+      const dbProfiles: Profile[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        dbProfiles.push({
+          id: doc.id, username: data.username, displayName: data.displayName, platform: data.platform as Platform, categoryId: data.categoryId, notes: data.notes, createdAt: data.createdAt, userId: data.userId
+        });
+      });
+      setProfiles(dbProfiles);
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'profiles'));
+
+    return () => {
+      unsubFolders();
+      unsubCategories();
+      unsubProfiles();
+    };
+  }, [user]);
 
   useEffect(() => {
     if (darkMode) {
@@ -201,48 +313,19 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // --- Auto-Migration Effect ---
-  useEffect(() => {
-    const orphans = categories.filter(c => !c.parentId && !c.folderId);
-    if (orphans.length > 0) {
-        console.log(`Keepy: Auto-migrating ${orphans.length} orphan categories.`);
-        let targetFolderId: string;
-        let updatedFolders = [...folders];
-        const existingGeneral = folders.find(f => f.name === 'General');
-        if (existingGeneral) {
-            targetFolderId = existingGeneral.id;
-        } else {
-            const newFolder = { id: Date.now().toString(), name: 'General' };
-            updatedFolders.push(newFolder);
-            targetFolderId = newFolder.id;
-            setExpandedFolderIds(prev => [...prev, newFolder.id]); // Auto-expand
-        }
-        const updatedCategories = categories.map(c => {
-            if (!c.parentId && !c.folderId) return { ...c, folderId: targetFolderId };
-            return c;
-        });
-        setFolders(updatedFolders);
-        setCategories(updatedCategories);
-    }
-  }, [categories, folders]);
-
-
   // --- Auth Handler ---
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (loginCode === 'Keepy@26') {
-      setIsAuthenticated(true);
-      localStorage.setItem('keepy_auth', 'true');
-      setLoginError('');
-    } else {
-      setLoginError('Incorrect access code');
-      setLoginCode(''); // Clear input on error
+  const handleLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (e) {
+      console.error(e);
+      setLoginError('Failed to sign in. Please try again.');
     }
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('keepy_auth');
+  const handleLogout = async () => {
+    await signOut(auth);
   };
 
   // --- Helpers ---
@@ -521,49 +604,95 @@ export default function App() {
      setIsManageFoldersOpen(true);
   };
 
-  const handleSaveFolder = () => {
-     if (!newFolderName.trim()) return;
+  const handleSaveFolder = async () => {
+     if (!newFolderName.trim() || !user) return;
      if (editingFolderId) {
-        setFolders(prev => prev.map(f => f.id === editingFolderId ? { ...f, name: newFolderName } : f));
+        try {
+          await setDoc(doc(db, 'folders', editingFolderId), { name: newFolderName, userId: user.uid });
+        } catch (e) {
+          handleFirestoreError(e, OperationType.UPDATE, `folders/${editingFolderId}`);
+        }
      } else {
-        // FIX: Use newFolderName instead of hardcoded 'General'
-        const newFolder: Folder = { id: Date.now().toString(), name: newFolderName };
-        setFolders(prev => [...prev, newFolder]);
-        setExpandedFolderIds(prev => [...prev, newFolder.id]);
+        const id = Date.now().toString();
+        try {
+          await setDoc(doc(db, 'folders', id), { name: newFolderName, userId: user.uid });
+          setExpandedFolderIds(prev => [...prev, id]);
+        } catch (e) {
+          handleFirestoreError(e, OperationType.CREATE, `folders/${id}`);
+        }
      }
      setIsManageFoldersOpen(false);
      setNewFolderName('');
      setEditingFolderId(null);
   };
 
-  const handleSaveInlineFolder = (e: React.MouseEvent) => {
+  const handleSaveInlineFolder = async (e: React.MouseEvent) => {
       e.preventDefault();
-      if (!newInlineFolderName.trim()) return;
-      const newFolder: Folder = { id: Date.now().toString(), name: newInlineFolderName.trim() };
-      setFolders(prev => [...prev, newFolder]);
-      setExpandedFolderIds(prev => [...prev, newFolder.id]);
-      setNewCategoryFolder(newFolder.id); // Auto select
-      setNewInlineFolderName('');
-      setIsCreatingFolderInline(false);
+      if (!newInlineFolderName.trim() || !user) return;
+      const id = Date.now().toString();
+      try {
+        await setDoc(doc(db, 'folders', id), { name: newInlineFolderName.trim(), userId: user.uid });
+        setExpandedFolderIds(prev => [...prev, id]);
+        setNewCategoryFolder(id); // Auto select
+        setNewInlineFolderName('');
+        setIsCreatingFolderInline(false);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.CREATE, `folders/${id}`);
+      }
   };
 
-  const handleDeleteFolder = (id: string) => {
-     if(window.confirm("Delete this folder? Categories inside will be 'Unfiled'.")) {
-        setFolders(prev => prev.filter(f => f.id !== id));
-        setCategories(prev => prev.map(c => c.folderId === id ? { ...c, folderId: undefined } : c));
-        if (selectedFolderId === id) setSelectedFolderId(null);
+  const handleDeleteFolder = async (id: string) => {
+     if(window.confirm("Delete this folder? Categories inside will be 'Unfiled'.") && user) {
+        try {
+          const batch = writeBatch(db);
+          batch.delete(doc(db, 'folders', id));
+          // categories are handled by onSnapshot, but we need to update them in Firestore
+          categories.forEach(c => {
+             if (c.folderId === id) {
+               batch.update(doc(db, 'categories', c.id), { folderId: '' });
+             }
+          });
+          await batch.commit();
+          if (selectedFolderId === id) setSelectedFolderId(null);
+        } catch (e) {
+          handleFirestoreError(e, OperationType.DELETE, `folders/${id}`);
+        }
      }
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     const isNameRequired = newProfilePlatform === 'google-maps' || newProfilePlatform === 'facebook';
-    if (!newProfileUsername || !newProfileCategory || (isNameRequired && !newProfileDisplayName.trim())) return;
+    if (!newProfileUsername || !newProfileCategory || (isNameRequired && !newProfileDisplayName.trim()) || !user) return;
     const cleanUser = cleanInputForPlatform(newProfileUsername, newProfilePlatform);
     if (editingProfileId) {
-       setProfiles(prev => prev.map(p => p.id === editingProfileId ? { ...p, username: cleanUser, displayName: newProfileDisplayName, platform: newProfilePlatform, categoryId: newProfileCategory, notes: newProfileNotes } : p));
+       try {
+         await setDoc(doc(db, 'profiles', editingProfileId), {
+           username: cleanUser,
+           displayName: newProfileDisplayName,
+           platform: newProfilePlatform,
+           categoryId: newProfileCategory,
+           notes: newProfileNotes,
+           userId: user.uid,
+           createdAt: profiles.find(p => p.id === editingProfileId)?.createdAt || Date.now()
+         });
+       } catch (e) {
+         handleFirestoreError(e, OperationType.UPDATE, `profiles/${editingProfileId}`);
+       }
     } else {
-       const newProfile: Profile = { id: Date.now().toString(), username: cleanUser, displayName: newProfileDisplayName, platform: newProfilePlatform, categoryId: newProfileCategory, notes: newProfileNotes, createdAt: Date.now() };
-       setProfiles([newProfile, ...profiles]);
+       const id = Date.now().toString();
+       try {
+         await setDoc(doc(db, 'profiles', id), {
+           username: cleanUser,
+           displayName: newProfileDisplayName,
+           platform: newProfilePlatform,
+           categoryId: newProfileCategory,
+           notes: newProfileNotes,
+           createdAt: Date.now(),
+           userId: user.uid
+         });
+       } catch (e) {
+         handleFirestoreError(e, OperationType.CREATE, `profiles/${id}`);
+       }
     }
     setIsAddProfileOpen(false);
     resetProfileForm();
@@ -609,10 +738,14 @@ export default function App() {
     setPickerExpandedCategoryIds([]);
   };
 
-  const handleDeleteProfile = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this profile?")) {
-      setProfiles(prev => prev.filter(p => p.id !== id));
-      setIsPreviewOpen(false);
+  const handleDeleteProfile = async (id: string) => {
+    if (window.confirm("Are you sure you want to delete this profile?") && user) {
+      try {
+        await deleteDoc(doc(db, 'profiles', id));
+        setIsPreviewOpen(false);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.DELETE, `profiles/${id}`);
+      }
     }
   };
 
@@ -647,8 +780,8 @@ export default function App() {
     setIsAddCategoryOpen(true);
   };
 
-  const handleSaveCategory = () => {
-    if (!newCategoryName) return;
+  const handleSaveCategory = async () => {
+    if (!newCategoryName || !user) return;
     if (!newCategoryParent && !newCategoryFolder) {
         alert("Please select a Folder for this category. Top-level categories must belong to a folder.");
         return;
@@ -658,22 +791,40 @@ export default function App() {
         const parent = categories.find(c => c.id === newCategoryParent);
         if (parent) colorToUse = parent.color;
     }
-    const folderToUse = newCategoryParent ? undefined : (newCategoryFolder || undefined);
+    const folderToUse = newCategoryParent ? '' : (newCategoryFolder || '');
     if (editingCategoryId) {
-        const updatedCategories = categories.map(c => {
-            if (c.id === editingCategoryId) return { ...c, name: newCategoryName, color: colorToUse, parentId: newCategoryParent || undefined, folderId: folderToUse };
-            return c;
-        });
-        const finalCategories = updatedCategories.map(c => {
-            if (c.parentId === editingCategoryId) return { ...c, color: colorToUse };
-            return c;
-        });
-        setCategories(finalCategories);
+       try {
+         const batch = writeBatch(db);
+         batch.update(doc(db, 'categories', editingCategoryId), {
+           name: newCategoryName,
+           color: colorToUse,
+           parentId: newCategoryParent || '',
+           folderId: folderToUse
+         });
+         categories.forEach(c => {
+            if (c.parentId === editingCategoryId) {
+              batch.update(doc(db, 'categories', c.id), { color: colorToUse });
+            }
+         });
+         await batch.commit();
+       } catch (e) {
+         handleFirestoreError(e, OperationType.UPDATE, `categories/${editingCategoryId}`);
+       }
     } else {
-        const newCategory: Category = { id: Date.now().toString(), name: newCategoryName, color: colorToUse, parentId: newCategoryParent || undefined, folderId: folderToUse };
-        setCategories([...categories, newCategory]);
-        if (newCategoryParent && !expandedCategoryIds.includes(newCategoryParent)) {
-            setExpandedCategoryIds([...expandedCategoryIds, newCategoryParent]);
+        const id = Date.now().toString();
+        try {
+          await setDoc(doc(db, 'categories', id), {
+            name: newCategoryName,
+            color: colorToUse,
+            parentId: newCategoryParent || '',
+            folderId: folderToUse,
+            userId: user.uid
+          });
+          if (newCategoryParent && !expandedCategoryIds.includes(newCategoryParent)) {
+              setExpandedCategoryIds([...expandedCategoryIds, newCategoryParent]);
+          }
+        } catch (e) {
+          handleFirestoreError(e, OperationType.CREATE, `categories/${id}`);
         }
     }
     setIsAddCategoryOpen(false);
@@ -683,14 +834,30 @@ export default function App() {
     setEditingCategoryId(null);
   };
 
-  const handleDeleteCategory = (id: string) => {
+  const handleDeleteCategory = async (id: string) => {
     const hasChildren = categories.some(c => c.parentId === id);
-    if (!window.confirm(hasChildren ? "Delete category and all subcategories?" : "Delete category?")) return;
-    const childrenIds = categories.filter(c => c.parentId === id).map(c => c.id);
-    const idsToDelete = [id, ...childrenIds];
-    setCategories(prev => prev.filter(c => !idsToDelete.includes(c.id)));
-    if (selectedCategoryId && idsToDelete.includes(selectedCategoryId)) setSelectedCategoryId(null);
-    setProfiles(prev => prev.map(p => idsToDelete.includes(p.categoryId) ? { ...p, categoryId: '' } : p));
+    if (!window.confirm(hasChildren ? "Delete category and all subcategories?" : "Delete category?") || !user) return;
+    try {
+      const childrenIds = categories.filter(c => c.parentId === id).map(c => c.id);
+      const idsToDelete = [id, ...childrenIds];
+      
+      const batch = writeBatch(db);
+      for (const delId of idsToDelete) {
+        batch.delete(doc(db, 'categories', delId));
+      }
+      
+      profiles.forEach(p => {
+         if (idsToDelete.includes(p.categoryId)) {
+           batch.update(doc(db, 'profiles', p.id), { categoryId: '' });
+         }
+      });
+      
+      await batch.commit();
+
+      if (selectedCategoryId && idsToDelete.includes(selectedCategoryId)) setSelectedCategoryId(null);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `categories/${id}`);
+    }
   };
 
   const handleOpenPreview = (profile: Profile) => {
@@ -795,21 +962,51 @@ export default function App() {
     );
   };
 
-  if (!isAuthenticated) {
+  if (authChecking || isMigrating) {
     return (
       <div className="min-h-[100dvh] bg-gray-50 dark:bg-slate-900 flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-2xl w-full max-w-sm border border-gray-100 dark:border-slate-700 text-center animate-in fade-in zoom-in duration-300">
-           <div className="mb-6 flex justify-center">
-              <div className="w-20 h-20 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center shadow-lg transform rotate-3 border border-gray-100 dark:border-slate-700 p-3">
-                 <img src={BRANDING.icon} alt="Keepy" className="w-full h-full object-contain" />
-              </div>
+        <div className="text-gray-500 animate-pulse font-medium">
+           {isMigrating ? "Migrating your phone lists to the cloud..." : "Loading Keepy..."}
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-[100dvh] bg-gray-50 dark:bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Decorative blobs */}
+        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-pink-400/20 dark:bg-pink-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-400/20 dark:bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        
+        <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-3xl shadow-2xl w-full max-w-md border border-gray-100 dark:border-slate-700 text-center relative z-10 animate-in fade-in zoom-in duration-300">
+           <div className="flex justify-center mb-8">
+               {darkMode ? (
+                 <img src={BRANDING.logoDark} alt="Keepy" className="h-10 w-auto" />
+               ) : (
+                 <img src={BRANDING.logoLight} alt="Keepy" className="h-10 w-auto" />
+               )}
            </div>
-           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome to Keepy</h1>
-           <form onSubmit={handleLogin} className="space-y-4">
-             <input type="password" value={loginCode} onChange={(e) => { setLoginCode(e.target.value); setLoginError(''); }} placeholder="Access Code" className="w-full p-4 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-pink-500 outline-none text-center text-lg font-bold text-gray-900 dark:text-white" />
-             {loginError && <p className="text-red-500 text-xs">{loginError}</p>}
-             <button type="submit" className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl font-bold">Unlock App</button>
-           </form>
+           
+           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">Welcome to Keepy</h1>
+           <p className="text-gray-500 dark:text-slate-400 mb-8 text-sm">Save, organize, and access all your important profiles and links in one secure place.</p>
+           
+           <div className="space-y-4">
+             {loginError && (
+                <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-xl text-sm font-medium animate-in fade-in">
+                  {loginError}
+                </div>
+             )}
+             <button onClick={handleLogin} className="w-full py-3.5 bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shadow-sm active:scale-[0.98]">
+                 <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-900 dark:text-white">
+                    <path
+                        fill="currentColor"
+                        d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12C5,7.9 8.2,4.73 12.2,4.73C15.29,4.73 17.1,6.7 17.1,6.7L19,4.72C19,4.72 16.56,2 12.1,2C6.42,2 2.03,6.8 2.03,12C2.03,17.05 6.16,22 12.25,22C17.6,22 21.5,18.33 21.5,12.91C21.5,11.76 21.35,11.1 21.35,11.1V11.1Z"
+                    />
+                 </svg>
+                 Continue with Google
+             </button>
+           </div>
         </div>
       </div>
     );
@@ -945,7 +1142,12 @@ export default function App() {
            <button onClick={() => setDarkMode(!darkMode)} className="flex items-center gap-3 w-full px-4 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-600 dark:text-slate-400">
              {darkMode ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />} <span>Theme</span>
            </button>
-           <button onClick={handleLogout} className="flex items-center gap-3 w-full px-4 py-2 rounded-xl hover:bg-red-50 text-red-500"><Icons.Lock className="w-5 h-5" /> <span>Lock</span></button>
+           <button onClick={() => setIsProfileModalOpen(true)} className="flex items-center gap-3 w-full px-4 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-600 dark:text-slate-400">
+             <div className="w-6 h-6 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center -ml-0.5">
+               <Icons.User className="w-4 h-4" />
+             </div>
+             <span>Profile</span>
+           </button>
            <div className="text-center text-[10px] text-gray-300 font-mono">v{APP_VERSION}</div>
         </div>
       </aside>
@@ -958,7 +1160,9 @@ export default function App() {
              <button onClick={() => setIsManageCategoriesOpen(true)} className="p-2 text-gray-500 hover:text-pink-500 rounded-lg hover:bg-gray-100"><Icons.FolderOpen className="w-6 h-6" /></button>
              <button onClick={() => setIsSupportOpen(true)} className="p-2 text-pink-500 rounded-lg hover:bg-pink-50"><Icons.Heart className="w-6 h-6" /></button>
             <button onClick={() => setDarkMode(!darkMode)} className="p-2 text-gray-500 rounded-lg hover:bg-gray-100">{darkMode ? <Icons.Sun className="w-6 h-6" /> : <Icons.Moon className="w-6 h-6" />}</button>
-            <button onClick={handleLogout} className="p-2 text-gray-500 rounded-lg hover:bg-gray-100"><Icons.Lock className="w-6 h-6" /></button>
+            <button onClick={() => setIsProfileModalOpen(true)} className="p-1 text-gray-500 rounded-full hover:bg-gray-100 flex items-center justify-center w-8 h-8 bg-gray-100 dark:bg-slate-800 ml-1">
+               <Icons.User className="w-4 h-4 text-gray-600 dark:text-gray-300" />
+            </button>
           </div>
         </div>
 
@@ -1189,7 +1393,56 @@ export default function App() {
         </div>
       )}
 
-      {/* Profile Modal */}
+      {/* User Profile Modal */}
+      <Modal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} title="My Profile">
+        <div className="space-y-6">
+          <div className="flex flex-col items-center justify-center p-6 bg-gray-50 dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-pink-400/10 to-violet-500/10 pointer-events-none"></div>
+            
+            {user?.photoURL ? (
+              <img src={user.photoURL} alt={user.displayName || "User"} className="w-20 h-20 rounded-full shadow-lg border-4 border-white dark:border-slate-800 mb-4 relative z-10" />
+            ) : (
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-pink-500 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-pink-500/20 mb-4 border-4 border-white dark:border-slate-800 relative z-10">
+                <Icons.User className="w-8 h-8" />
+              </div>
+            )}
+            
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white relative z-10">{user?.displayName || "Anonymous User"}</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 relative z-10">{user?.email}</p>
+          </div>
+          
+          <div className="space-y-3">
+             <div className="p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl space-y-3">
+                <div className="flex justify-between items-center text-sm">
+                   <span className="text-gray-500 font-medium">Joined</span>
+                   <span className="text-gray-900 dark:text-white font-mono">{user?.metadata.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString() : 'Unknown'}</span>
+                </div>
+                <div className="border-t border-gray-100 dark:border-slate-700"></div>
+                <div className="flex justify-between items-center text-sm">
+                   <span className="text-gray-500 font-medium">Saved Profiles</span>
+                   <span className="text-gray-900 dark:text-white font-mono font-bold bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 px-2 py-0.5 rounded-md">{profiles.length}</span>
+                </div>
+                {totalUsers !== null && (
+                   <>
+                      <div className="border-t border-gray-100 dark:border-slate-700"></div>
+                      <div className="flex justify-between items-center text-sm">
+                         <span className="text-gray-500 font-medium flex items-center gap-1">
+                            <Icons.User className="w-4 h-4" /> App Users (Admin View)
+                         </span>
+                         <span className="text-gray-900 dark:text-white font-mono font-bold bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-md">{totalUsers}</span>
+                      </div>
+                   </>
+                )}
+             </div>
+          </div>
+          
+          <button onClick={() => { setIsProfileModalOpen(false); handleLogout(); }} className="w-full py-3.5 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
+            <Icons.LogOut className="w-5 h-5" /> Sign Out
+          </button>
+        </div>
+      </Modal>
+
+      {/* Editor Modal */}
       <Modal isOpen={isAddProfileOpen} onClose={() => { setIsAddProfileOpen(false); resetProfileForm(); }} title={editingProfileId ? "Edit Profile" : "Add Profile"}>
          <div className="space-y-4">
            <div>

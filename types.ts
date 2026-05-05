@@ -3,6 +3,7 @@ export type Platform = 'instagram' | 'facebook' | 'tiktok' | 'x' | 'website' | '
 export interface Folder {
   id: string;
   name: string;
+  userId?: string;
 }
 
 export interface Category {
@@ -11,6 +12,7 @@ export interface Category {
   color: string;
   parentId?: string; // If undefined, it's a main category. If defined, it's a subcategory.
   folderId?: string; // Optional: Belongs to a specific folder (Only for Top-Level categories)
+  userId?: string;
 }
 
 export interface Profile {
@@ -21,6 +23,7 @@ export interface Profile {
   categoryId: string;
   notes: string;
   createdAt: number;
+  userId?: string;
 }
 
 export type SortOption = 'a-z' | 'z-a' | 'newest' | 'oldest' | 'color';

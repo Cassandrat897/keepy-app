@@ -27,7 +27,10 @@ import {
   Mail,
   Coffee,
   X,
-  MapPin
+  MapPin,
+  User,
+  LogOut,
+  AlertTriangle,
 } from 'lucide-react';
 
 // Custom TikTok Icon (Music Note style)
@@ -93,5 +96,8 @@ export const Icons = {
   X,
   MapPin,
   TikTok,
-  TwitterX
+  TwitterX,
+  User,
+  LogOut,
+  AlertTriangle
 };

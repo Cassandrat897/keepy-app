@@ -13,17 +13,20 @@
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "firebase": "^12.12.1",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@firebase/eslint-plugin-security-rules": "^0.0.2",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
     "esbuild": "^0.28.0",
+    "eslint": "^10.3.0",
     "tsx": "^4.21.0",
     "typescript": "^5.2.2",
     "vite": "^5.2.0"

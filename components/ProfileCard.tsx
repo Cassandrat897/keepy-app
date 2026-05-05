@@ -6,8 +6,9 @@ interface ProfileCardProps {
   profile: Profile;
   category?: Category;
   path?: string; // New prop for breadcrumbs
-  onClick: (profile: Profile) => void;
-  onEdit: (e: React.MouseEvent, profile: Profile) => void;
+  readonly?: boolean;
+  onClick?: (profile: Profile) => void;
+  onEdit?: (e: React.MouseEvent, profile: Profile) => void;
 }
 
 const PlatformIcon = ({ platform }: { platform: Platform }) => {
@@ -54,7 +55,7 @@ const PlatformIcon = ({ platform }: { platform: Platform }) => {
   }
 };
 
-export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, path, onClick, onEdit }) => {
+export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, path, readonly, onClick, onEdit }) => {
   const getDisplayTitle = () => {
     if (profile.displayName) return profile.displayName;
     
@@ -83,7 +84,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, pat
 
   return (
     <div 
-      onClick={() => onClick(profile)}
+      onClick={() => onClick && onClick(profile)}
       className="group relative bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer flex items-center gap-4"
     >
       {/* Decorative colored strip based on category */}
@@ -114,12 +115,14 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, pat
         )}
       </div>
 
-      <button 
-        onClick={(e) => onEdit(e, profile)}
-        className="p-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500"
-      >
-        <Icons.MoreVertical className="w-4 h-4" />
-      </button>
+      {!readonly && onEdit && (
+        <button 
+          onClick={(e) => onEdit(e, profile)}
+          className="p-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500"
+        >
+          <Icons.MoreVertical className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 };

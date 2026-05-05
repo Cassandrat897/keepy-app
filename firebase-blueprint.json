@@ -1,0 +1,92 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "lastLogin": { "type": "number" }
+      },
+      "required": ["email", "createdAt", "lastLogin"]
+    },
+    "Folder": {
+      "title": "Folder",
+      "description": "Organizational unit holding categories.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "userId": { "type": "string" }
+      },
+      "required": ["name", "userId"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Category for classifying profiles.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "color": { "type": "string", "maxLength": 50 },
+        "parentId": { "type": "string", "maxLength": 50 },
+        "folderId": { "type": "string", "maxLength": 50 },
+        "userId": { "type": "string" }
+      },
+      "required": ["name", "color", "userId"]
+    },
+    "Profile": {
+      "title": "Profile",
+      "description": "A saved link or profile.",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "maxLength": 1000 },
+        "displayName": { "type": "string", "maxLength": 1000 },
+        "platform": { "type": "string", "maxLength": 50 },
+        "categoryId": { "type": "string", "maxLength": 50 },
+        "notes": { "type": "string", "maxLength": 5000 },
+        "createdAt": { "type": "number" },
+        "userId": { "type": "string" }
+      },
+      "required": ["username", "platform", "categoryId", "createdAt", "userId"]
+    },
+    "SharedList": {
+      "title": "Shared List",
+      "description": "A public snapshot of a shared category and its profiles.",
+      "type": "object",
+      "properties": {
+        "categoryName": { "type": "string" },
+        "categoryColor": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "profiles": {
+           "type": "array",
+           "items": { "type": "object" }
+        },
+        "createdAt": { "type": "number" },
+        "userId": { "type": "string" }
+      },
+      "required": ["categoryName", "categoryColor", "ownerName", "profiles", "createdAt", "userId"]
+    }
+  },
+  "firestore": {
+    "/shared_lists/{shareId}": {
+      "schema": "SharedList",
+      "description": "Publicly readable shared lists."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Master list of users."
+    },
+    "/folders/{folderId}": {
+      "schema": "Folder",
+      "description": "Master list of folders."
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Master list of categories."
+    },
+    "/profiles/{profileId}": {
+      "schema": "Profile",
+      "description": "Master list of profiles."
+    }
+  }
+}
