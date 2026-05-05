@@ -8,7 +8,7 @@ import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvi
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, getDocFromServer, query, where } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
-const APP_VERSION = '1.3.13'; // Conditional Display Name
+const APP_VERSION = '1.3.15'; // Updated version
 
 // Paste your logo URLs or Base64 strings inside the quotes below.
 export const BRANDING = {
@@ -162,9 +162,9 @@ export default function App() {
 
   const [totalUsers, setTotalUsers] = useState<number | null>(null);
 
-  // --- Local Data Migration ---
+  // --- Local Data Migration & Redirect Check ---
   useEffect(() => {
-    // Check for redirect results on mount
+    // Only check redirect ONCE on mount
     const checkRedirect = async () => {
         try {
             const result = await getRedirectResult(auth);
@@ -173,14 +173,17 @@ export default function App() {
             }
         } catch (e: any) {
             console.warn("Redirect auth error (non-fatal):", e);
-            if (e.code !== 'auth/popup-closed-by-user') {
-                setLoginError("Login failed: " + (e.message || "Unknown error"));
+            // Don't show error for normal case where user just opens the app
+            if (e.code && e.code !== 'auth/popup-closed-by-user') {
+                setLoginError("Login failed: " + (e.message || "Unknown error") + " (Code: " + e.code + ")");
             }
         }
     };
     
     checkRedirect();
+  }, []);
 
+  useEffect(() => {
     if (!user) return;
     
     const migrateLocalData = async () => {
@@ -348,21 +351,27 @@ export default function App() {
       setIsLoggingIn(true);
       setLoginError('');
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      provider.setCustomParameters({ prompt: 'select_account' });
+      // On mobile, popup is often blocked or fails. Redirect is safer.
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        await signInWithRedirect(auth, provider);
+      } else {
+        await signInWithPopup(auth, provider);
+      }
     } catch (e: any) {
       console.error(e);
       let errorMsg = e.message || 'Failed to sign in. Please try again.';
       if (e.code === 'auth/popup-blocked') {
-         errorMsg = 'Popup was blocked by your browser. Please allow popups or open the app in Safari/Chrome directly.';
+         errorMsg = 'Popup was blocked by your browser. Please allow popups or use the Redirect option below.';
       } else if (e.code === 'auth/popup-closed-by-user') {
          errorMsg = 'Sign in popup was closed before completing.';
       } else if (e.code === 'auth/web-storage-unsupported') {
-         errorMsg = 'Your browser blocks third-party cookies/storage. Please open in a normal browser tab or disable "Prevent Cross-Site Tracking".';
+         errorMsg = 'Your browser blocks third-party storage. For Safari users: Go to Settings -> Safari and disable "Prevent Cross-Site Tracking".';
       } else if (e.code === 'auth/unauthorized-domain') {
-         errorMsg = 'This domain (' + window.location.hostname + ') is not authorized. Please double-check that this EXACT domain is listed in your Firebase Console -> Authentication -> Settings -> Authorized Domains. It can take 2 minutes for changes to apply.';
+         errorMsg = 'This domain (' + window.location.hostname + ') is not authorized. Please add it to your Firebase Console -> Authentication -> Settings -> Authorized Domains.';
       }
-      setLoginError("Login failed: " + errorMsg);
-    } finally {
+      setLoginError("Login failed: " + errorMsg + " (Code: " + (e.code || 'unknown') + ")");
       setIsLoggingIn(false);
     }
   };
@@ -373,16 +382,26 @@ export default function App() {
       setIsLoggingIn(true);
       setLoginError('');
       const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithRedirect(auth, provider);
     } catch (e: any) {
       console.error(e);
-      setLoginError("Redirect login initialization failed: " + e.message);
+      setLoginError("Redirect login failed: " + e.message + " (Code: " + (e.code || 'unknown') + ")");
       setIsLoggingIn(false);
     }
   };
 
   const handleLogout = async () => {
     await signOut(auth);
+  };
+
+  const handleSwitchAccount = async () => {
+    setIsProfileModalOpen(false);
+    await signOut(auth);
+    // Short delay to ensure sign out is processed before triggering login
+    setTimeout(() => {
+      handleLogin();
+    }, 100);
   };
 
   // --- Helpers ---
@@ -1022,8 +1041,11 @@ export default function App() {
   if (authChecking || isMigrating) {
     return (
       <div className="min-h-[100dvh] bg-gray-50 dark:bg-slate-900 flex items-center justify-center p-4">
-        <div className="text-gray-500 animate-pulse font-medium">
-           {isMigrating ? "Migrating your phone lists to the cloud..." : "Loading Keepy..."}
+        <div className="flex flex-col items-center gap-4">
+           <div className="w-10 h-10 border-4 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+           <div className="text-gray-500 font-medium">
+              {isMigrating ? "Migrating your phone lists to the cloud..." : "Loading Keepy..."}
+           </div>
         </div>
       </div>
     );
@@ -1037,13 +1059,16 @@ export default function App() {
         <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-400/20 dark:bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
         
         <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-3xl shadow-2xl w-full max-w-md border border-gray-100 dark:border-slate-700 text-center relative z-10 animate-in fade-in zoom-in duration-300">
-           <div className="flex justify-center mb-8">
-               {darkMode ? (
-                 <img src={BRANDING.logoDark} alt="Keepy" className="h-10 w-auto" />
-               ) : (
-                 <img src={BRANDING.logoLight} alt="Keepy" className="h-10 w-auto" />
-               )}
-           </div>
+             <div className="flex justify-center mb-8">
+               <div className="flex flex-col items-center gap-1">
+                 {darkMode ? (
+                   <img src={BRANDING.logoDark} alt="Keepy" className="h-10 w-auto" />
+                 ) : (
+                   <img src={BRANDING.logoLight} alt="Keepy" className="h-10 w-auto" />
+                 )}
+                 <span className="text-[10px] text-gray-400 font-mono">v{APP_VERSION}</span>
+               </div>
+             </div>
            
            <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">Welcome to Keepy</h1>
            <p className="text-gray-500 dark:text-slate-400 mb-8 text-sm">Save, organize, and access all your important profiles and links in one secure place.</p>
@@ -1054,43 +1079,41 @@ export default function App() {
                   {loginError}
                 </div>
              )}
-             <button 
-                onClick={handleLogin} 
-                disabled={isLoggingIn}
-                className={`w-full py-3.5 bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shadow-sm active:scale-[0.98] ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
-             >
-                 {isLoggingIn ? (
-                   <div className="w-5 h-5 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
-                 ) : (
-                   <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-900 dark:text-white">
-                      <path
-                          fill="currentColor"
-                          d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12C5,7.9 8.2,4.73 12.2,4.73C15.29,4.73 17.1,6.7 17.1,6.7L19,4.72C19,4.72 16.56,2 12.1,2C6.42,2 2.03,6.8 2.03,12C2.03,17.05 6.16,22 12.25,22C17.6,22 21.5,18.33 21.5,12.91C21.5,11.76 21.35,11.1 21.35,11.1V11.1Z"
-                      />
-                   </svg>
-                 )}
-                 {isLoggingIn ? 'Signing in...' : 'Continue with Google'}
-             </button>
-             {/* Mobile Alternative */}
-             <div className="relative pt-2">
-                <div className="absolute inset-0 flex items-center pt-2">
-                  <span className="w-full border-t border-gray-100 dark:border-slate-700" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase pt-2">
-                  <span className="bg-white dark:bg-slate-800 px-2 text-gray-400 font-semibold tracking-wider">Or Mobile Fallback</span>
-                </div>
+             <div className="space-y-3">
+               <button 
+                  onClick={handleLogin} 
+                  disabled={isLoggingIn}
+                  className={`w-full py-4 bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shadow-sm active:scale-[0.98] ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
+               >
+                   {isLoggingIn ? (
+                     <div className="w-5 h-5 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+                   ) : (
+                     <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-900 dark:text-white">
+                        <path
+                            fill="currentColor"
+                            d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12C5,7.9 8.2,4.73 12.2,4.73C15.29,4.73 17.1,6.7 17.1,6.7L19,4.72C19,4.72 16.56,2 12.1,2C6.42,2 2.03,6.8 2.03,12C2.03,17.05 6.16,22 12.25,22C17.6,22 21.5,18.33 21.5,12.91C21.5,11.76 21.35,11.1 21.35,11.1V11.1Z"
+                        />
+                     </svg>
+                   )}
+                   {isLoggingIn ? 'Signing in...' : 'Continue with Google'}
+               </button>
+               
+               <p className="text-[10px] text-gray-400 dark:text-slate-500 px-4">
+                 On iPhone/Safari? If the button above fails, ensure "Prevent Cross-Site Tracking" is disabled in Safari settings, or try the button below.
+               </p>
+
+               <button 
+                  onClick={handleLoginRedirect} 
+                  disabled={isLoggingIn}
+                  className={`w-full py-3.5 bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors shadow-sm active:scale-[0.98] text-sm ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
+               >
+                   {isLoggingIn ? (
+                     <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                   ) : (
+                     'Alternative: Sign in via Redirect'
+                   )}
+               </button>
              </div>
-             <button 
-                onClick={handleLoginRedirect} 
-                disabled={isLoggingIn}
-                className={`w-full py-3.5 bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors shadow-sm active:scale-[0.98] text-sm ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
-             >
-                 {isLoggingIn ? (
-                   <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
-                 ) : (
-                   'Sign in via Browser Redirect'
-                 )}
-             </button>
            </div>
         </div>
       </div>
@@ -1521,9 +1544,14 @@ export default function App() {
              </div>
           </div>
           
-          <button onClick={() => { setIsProfileModalOpen(false); handleLogout(); }} className="w-full py-3.5 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
-            <Icons.LogOut className="w-5 h-5" /> Sign Out
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+             <button onClick={() => { setIsProfileModalOpen(false); handleLogout(); }} className="py-3.5 bg-gray-50 hover:bg-gray-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-300 rounded-xl font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
+               <Icons.LogOut className="w-5 h-5" /> Sign Out
+             </button>
+             <button onClick={handleSwitchAccount} className="py-3.5 bg-pink-50 hover:bg-pink-100 dark:bg-pink-900/20 dark:hover:bg-pink-900/30 text-pink-600 dark:text-pink-400 rounded-xl font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
+               <Icons.Users className="w-5 h-5" /> Switch User
+             </button>
+          </div>
         </div>
       </Modal>
 

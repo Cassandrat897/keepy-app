@@ -120,5 +120,12 @@ service cloud.firestore {
                    && isValidId(profileId)
                    && existing().userId == request.auth.uid;
     }
+
+    // ====== SHARED LISTS ======
+    match /shared_lists/{shareId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow delete: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+    }
   }
 }
