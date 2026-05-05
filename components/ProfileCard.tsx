@@ -84,8 +84,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, pat
 
   return (
     <div 
-      onClick={() => onClick && onClick(profile)}
-      className="group relative bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer flex items-center gap-4"
+      className="group relative bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 hover:shadow-md transition-all flex items-center gap-4"
     >
       {/* Decorative colored strip based on category */}
       <div 
@@ -107,7 +106,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, pat
             </p>
         )}
         
-        {/* Optional: Notes Snippet (Only if no path or very long? Let's keep both for now but smaller) */}
+        {/* Optional: Notes Snippet */}
         {profile.notes && (
            <p className="text-[10px] text-gray-500 dark:text-slate-400 truncate mt-1 italic opacity-80">
              {profile.notes}
@@ -115,14 +114,27 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({ profile, category, pat
         )}
       </div>
 
-      {!readonly && onEdit && (
+      <div className="flex items-center gap-1.5">
         <button 
-          onClick={(e) => onEdit(e, profile)}
-          className="p-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500"
+          onClick={() => onClick && onClick(profile)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-300 rounded-lg text-xs font-bold transition-colors border border-gray-100 dark:border-slate-600"
+          title="View Details"
         >
-          <Icons.MoreVertical className="w-4 h-4" />
+          <Icons.Eye className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">View</span>
         </button>
-      )}
+
+        {!readonly && onEdit && (
+          <button 
+            onClick={(e) => onEdit(e, profile)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-pink-50 hover:bg-pink-100 dark:bg-pink-900/20 dark:hover:bg-pink-900/30 text-pink-600 dark:text-pink-400 rounded-lg text-xs font-bold transition-colors border border-pink-100 dark:border-pink-900/10"
+            title="Edit Profile"
+          >
+            <Icons.Edit2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Edit</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 };

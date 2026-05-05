@@ -3,12 +3,20 @@ import { Category, Profile, SortOption, PASTEL_COLORS, Platform, Folder } from '
 import { Icons } from './components/Icon';
 import { Modal } from './components/Modal';
 import { ProfileCard } from './components/ProfileCard';
+
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, getDocFromServer, query, where } from 'firebase/firestore';
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged, 
+  User, 
+  updateProfile
+} from 'firebase/auth';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, getDocFromServer, getDocs } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
-const APP_VERSION = '1.3.15'; // Updated version
+const APP_VERSION = '2.3.0'; // Back to Email/Pass Auth
 
 // Paste your logo URLs or Base64 strings inside the quotes below.
 export const BRANDING = {
@@ -82,10 +90,20 @@ export default function App() {
   // --- Auth State ---
   const [user, setUser] = useState<User | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
-  const [isMigrating, setIsMigrating] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  
+  // Registration Form State
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regName, setRegName] = useState('');
 
+  // Login Form State
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  
   // --- App State ---
   const [folders, setFolders] = useState<Folder[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -160,94 +178,8 @@ export default function App() {
   // File Input Ref for Import
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+
   const [totalUsers, setTotalUsers] = useState<number | null>(null);
-
-  // --- Local Data Migration & Redirect Check ---
-  useEffect(() => {
-    // Only check redirect ONCE on mount
-    const checkRedirect = async () => {
-        const isLoginAttempt = localStorage.getItem('keepy_login_pending');
-        try {
-            const result = await getRedirectResult(auth);
-            if (result) {
-                console.log("Redirect login successful");
-                localStorage.removeItem('keepy_login_pending');
-            } else if (isLoginAttempt) {
-                // If we were expecting a login but result is null, and onAuthStateChanged hasn't fired with a user yet
-                // it might be a cross-site tracking block.
-                // We wait a bit to see if onAuthStateChanged picks it up.
-                setTimeout(() => {
-                  if (!auth.currentUser) {
-                    setLoginError("Login failed to complete. If you are on iPhone, please ensure 'Prevent Cross-Site Tracking' is DISABLED in Safari Settings, or try opening the app directly in Safari.");
-                    localStorage.removeItem('keepy_login_pending');
-                  }
-                }, 2000);
-            }
-        } catch (e: any) {
-            console.warn("Redirect auth error:", e);
-            localStorage.removeItem('keepy_login_pending');
-            if (e.code && e.code !== 'auth/popup-closed-by-user') {
-                setLoginError("Login failed: " + (e.message || "Unknown error") + " (Code: " + e.code + ")");
-            }
-        }
-    };
-    
-    checkRedirect();
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    
-    const migrateLocalData = async () => {
-      const savedFolders = localStorage.getItem('keepy_folders');
-      const savedCategories = localStorage.getItem('keepy_categories');
-      const savedProfiles = localStorage.getItem('keepy_profiles');
-      
-      if (!savedFolders && !savedCategories && !savedProfiles) return;
-      
-      setIsMigrating(true);
-      try {
-        let allItems: any[] = [];
-        
-        if (savedFolders) {
-          const folders: Folder[] = JSON.parse(savedFolders);
-          folders.forEach(f => allItems.push({ type: 'folders', id: f.id, data: { name: f.name, userId: user.uid } }));
-        }
-        if (savedCategories) {
-          const categories: Category[] = JSON.parse(savedCategories);
-          categories.forEach(c => allItems.push({ type: 'categories', id: c.id, data: { name: c.name, color: c.color, parentId: c.parentId || '', folderId: c.folderId || '', userId: user.uid } }));
-        }
-        if (savedProfiles) {
-          const profiles: Profile[] = JSON.parse(savedProfiles);
-          profiles.forEach(p => allItems.push({ type: 'profiles', id: p.id, data: { username: p.username, displayName: p.displayName || '', platform: p.platform || 'website', categoryId: p.categoryId || '', notes: p.notes || '', createdAt: p.createdAt || Date.now(), userId: user.uid } }));
-        }
-        
-        // Chunk by 400 for batches
-        for (let i = 0; i < allItems.length; i += 400) {
-           const chunk = allItems.slice(i, i + 400);
-           const batch = writeBatch(db);
-           chunk.forEach(item => {
-               batch.set(doc(db, item.type, item.id), item.data);
-           });
-           await batch.commit();
-        }
-        
-        // Clear local storage after successful migration
-        localStorage.removeItem('keepy_folders');
-        localStorage.removeItem('keepy_categories');
-        localStorage.removeItem('keepy_profiles');
-        localStorage.removeItem('keepy_auth');
-        
-        console.log(`Migrated ${allItems.length} items from local storage to Firebase.`);
-      } catch (e) {
-        console.error("Migration failed:", e);
-      } finally {
-        setIsMigrating(false);
-      }
-    };
-    
-    migrateLocalData();
-  }, [user]);
 
   // --- Firebase Setup & Sync ---
   useEffect(() => {
@@ -256,24 +188,26 @@ export default function App() {
       setAuthChecking(false);
 
       if (currentUser) {
-         try {
-             // Create or update user
-             const userRef = doc(db, 'users', currentUser.uid);
-             const userSnap = await getDocFromServer(userRef).catch(() => null);
-             if (!userSnap || !userSnap.exists()) {
-                 await setDoc(userRef, {
-                     email: currentUser.email || '',
-                     createdAt: Date.now(),
-                     lastLogin: Date.now()
-                 });
-             } else {
-                 await setDoc(userRef, {
-                     lastLogin: Date.now()
-                 }, { merge: true });
-             }
-         } catch (e) {
-             console.error("Failed to sync user:", e);
-         }
+        try {
+          const userRef = doc(db, 'users', currentUser.uid);
+          const userSnap = await getDocFromServer(userRef).catch(() => null);
+          
+          if (!userSnap || !userSnap.exists()) {
+            await setDoc(userRef, {
+              email: currentUser.email || '',
+              name: currentUser.displayName || '',
+              createdAt: Date.now(),
+              lastLogin: Date.now()
+            });
+          } else {
+            await setDoc(userRef, {
+              name: currentUser.displayName || userSnap.data().name || '',
+              lastLogin: Date.now()
+            }, { merge: true });
+          }
+        } catch (e) {
+          console.error("Failed to sync user:", e);
+        }
       }
     });
     return () => unsubscribe();
@@ -282,12 +216,13 @@ export default function App() {
   useEffect(() => {
     if (user?.email === 'cassandrat897@gmail.com') {
       const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
-         setTotalUsers(snapshot.size);
+        setTotalUsers(snapshot.size);
       }, (e) => {
-         // Silently fail for users since it's just a stat for admin
-         console.warn("Could not fetch total users:", e);
+        console.warn("Admin: Could not fetch total users:", e);
       });
       return () => unsub();
+    } else {
+      setTotalUsers(null);
     }
   }, [user]);
 
@@ -356,57 +291,44 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // --- Auth Handler ---
-  const handleLogin = async () => {
-    if (isLoggingIn) return;
+  // --- Auth Handlers ---
+  const handleRegister = async (e: React.FormEvent) => {
+     e.preventDefault();
+     if (!regEmail || !regPassword || !regName) return;
+     setIsLoggingIn(true);
+     setLoginError('');
+     try {
+       const userCredential = await createUserWithEmailAndPassword(auth, regEmail, regPassword);
+       await updateProfile(userCredential.user, { displayName: regName });
+       setUser({ ...userCredential.user, displayName: regName });
+     } catch (e: any) {
+       console.error(e);
+       setLoginError(e.message || "Failed to register.");
+     } finally {
+       setIsLoggingIn(false);
+     }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail || !loginPassword) return;
+    setIsLoggingIn(true);
+    setLoginError('');
     try {
-      setIsLoggingIn(true);
-      setLoginError('');
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ 
-        prompt: 'select_account',
-        // Request fresh auth
-        auth_type: 'reauthenticate'
-      });
-      
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile) {
-        localStorage.setItem('keepy_login_pending', 'true');
-        // Redirect is more reliable on iOS Safari
-        await signInWithRedirect(auth, provider);
-      } else {
-        await signInWithPopup(auth, provider);
-      }
+      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
     } catch (e: any) {
       console.error(e);
-      let errorMsg = e.message || 'Failed to sign in. Please try again.';
-      if (e.code === 'auth/popup-blocked') {
-         errorMsg = 'Popup was blocked by your browser. Please allow popups or use the Redirect option below.';
-      } else if (e.code === 'auth/popup-closed-by-user') {
-         errorMsg = 'Sign in popup was closed before completing.';
-      } else if (e.code === 'auth/web-storage-unsupported') {
-         errorMsg = 'Your browser blocks third-party storage. For Safari users: Go to Settings -> Safari and disable "Prevent Cross-Site Tracking".';
-      } else if (e.code === 'auth/unauthorized-domain') {
-         errorMsg = 'This domain (' + window.location.hostname + ') is not authorized. Please add it to your Firebase Console -> Authentication -> Settings -> Authorized Domains.';
-      }
-      setLoginError("Login failed: " + errorMsg + " (Code: " + (e.code || 'unknown') + ")");
+      setLoginError(e.message || "Failed to sign in.");
+    } finally {
       setIsLoggingIn(false);
     }
   };
 
-  const handleLoginRedirect = async () => {
-    if (isLoggingIn) return;
-    try {
-      setIsLoggingIn(true);
-      setLoginError('');
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      localStorage.setItem('keepy_login_pending', 'true');
-      await signInWithRedirect(auth, provider);
-    } catch (e: any) {
-      console.error(e);
-      setLoginError("Redirect login failed: " + e.message + " (Code: " + (e.code || 'unknown') + ")");
-      setIsLoggingIn(false);
+  const clearAuthSession = () => {
+    if (window.confirm("This will clear your local app session. You will be signed out. Continue?")) {
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.reload();
     }
   };
 
@@ -414,19 +336,6 @@ export default function App() {
     await signOut(auth);
   };
 
-  const handleSwitchAccount = async () => {
-    setIsProfileModalOpen(false);
-    // Completely clear all app state
-    localStorage.clear();
-    sessionStorage.clear();
-    await signOut(auth);
-    // Force a small delay for the state to propagate
-    setTimeout(() => {
-      window.location.reload(); 
-    }, 200);
-  };
-
-  // --- Helpers ---
   const toggleFolderExpand = (id: string) => {
     setExpandedFolderIds(prev => 
       prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
@@ -744,7 +653,6 @@ export default function App() {
         try {
           const batch = writeBatch(db);
           batch.delete(doc(db, 'folders', id));
-          // categories are handled by onSnapshot, but we need to update them in Firestore
           categories.forEach(c => {
              if (c.folderId === id) {
                batch.update(doc(db, 'categories', c.id), { folderId: '' });
@@ -838,10 +746,13 @@ export default function App() {
 
   const handleDeleteProfile = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this profile?") && user) {
+      setDeleteError(null);
       try {
         await deleteDoc(doc(db, 'profiles', id));
         setIsPreviewOpen(false);
-      } catch (e) {
+        setSelectedProfile(null);
+      } catch (e: any) {
+        setDeleteError(e.message || "Failed to delete profile.");
         handleFirestoreError(e, OperationType.DELETE, `profiles/${id}`);
       }
     }
@@ -944,11 +855,10 @@ export default function App() {
         batch.delete(doc(db, 'categories', delId));
       }
       
-      profiles.forEach(p => {
-         if (idsToDelete.includes(p.categoryId)) {
-           batch.update(doc(db, 'profiles', p.id), { categoryId: '' });
-         }
-      });
+      const profilesToUpdate = profiles.filter(p => idsToDelete.includes(p.categoryId));
+      for (const p of profilesToUpdate) {
+         batch.update(doc(db, 'profiles', p.id), { categoryId: '' });
+      }
       
       await batch.commit();
 
@@ -1060,14 +970,12 @@ export default function App() {
     );
   };
 
-  if (authChecking || isMigrating) {
+  if (authChecking) {
     return (
       <div className="min-h-[100dvh] bg-gray-50 dark:bg-slate-900 flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-4">
            <div className="w-10 h-10 border-4 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
-           <div className="text-gray-500 font-medium">
-              {isMigrating ? "Migrating your phone lists to the cloud..." : "Loading Keepy..."}
-           </div>
+           <div className="text-gray-500 font-medium">Loading Keepy...</div>
         </div>
       </div>
     );
@@ -1078,9 +986,9 @@ export default function App() {
       <div className="min-h-[100dvh] bg-gray-50 dark:bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
         {/* Decorative blobs */}
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-pink-400/20 dark:bg-pink-600/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-400/20 dark:bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-400/20 dark:bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
         
-        <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-3xl shadow-2xl w-full max-w-md border border-gray-100 dark:border-slate-700 text-center relative z-10 animate-in fade-in zoom-in duration-300">
+        <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-3xl shadow-2xl w-full max-w-md border border-gray-100 dark:border-slate-700 relative z-10 animate-in fade-in zoom-in duration-300">
              <div className="flex justify-center mb-8">
                <div className="flex flex-col items-center gap-1">
                  {darkMode ? (
@@ -1092,64 +1000,123 @@ export default function App() {
                </div>
              </div>
            
-           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">Welcome to Keepy</h1>
-           <p className="text-gray-500 dark:text-slate-400 mb-8 text-sm">Save, organize, and access all your important profiles and links in one secure place.</p>
-           
-           <div className="space-y-4">
-             {loginError && (
-                <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-xl text-sm font-medium animate-in fade-in">
-                  {loginError}
+           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2 text-center">
+             {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
+           </h1>
+           <p className="text-gray-500 dark:text-slate-400 mb-8 text-sm text-center">
+             {authMode === 'login' 
+               ? 'Access your saved profiles and links.' 
+               : 'Start organizing your digital life today.'}
+           </p>
+
+           {loginError && (
+              <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 rounded-xl text-sm font-medium flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <Icons.AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span className="break-words">{loginError}</span>
+                </div>
+                {loginError.includes('auth/configuration-not-found') && (
+                  <p className="text-[10px] opacity-80 mt-1">
+                    <strong>Tip:</strong> Email/Password authentication must be enabled in your Firebase Console. Go to <i>Authentication &rarr; Sign-in method</i> and enable "Email/Password".
+                  </p>
+                )}
+                {loginError.includes('auth/unauthorized-domain') && (
+                  <p className="text-[10px] opacity-80 mt-1">
+                    <strong>Tip:</strong> You need to add this domain to the "Authorized Domains" list in Firebase. Go to <i>Authentication &rarr; Settings &rarr; Authorized Domains</i> and add: <code>{window.location.hostname}</code>
+                  </p>
+                )}
+              </div>
+           )}
+
+           <form onSubmit={authMode === 'login' ? handleLogin : handleRegister} className="space-y-4">
+             {authMode === 'register' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-gray-700 dark:text-slate-300 ml-1">Full Name</label>
+                  <div className="relative">
+                    <Icons.User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input 
+                      type="text" 
+                      value={regName} 
+                      onChange={e => setRegName(e.target.value)}
+                      placeholder="Jane Doe"
+                      className="w-full pl-11 pr-4 py-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-pink-500 transition-all dark:text-white"
+                      disabled={isLoggingIn}
+                    />
+                  </div>
                 </div>
              )}
-             <div className="space-y-3">
-               <button 
-                  onClick={handleLogin} 
-                  disabled={isLoggingIn}
-                  className={`w-full py-4 bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shadow-sm active:scale-[0.98] ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
-               >
-                   {isLoggingIn ? (
-                     <div className="w-5 h-5 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
-                   ) : (
-                     <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-900 dark:text-white">
-                        <path
-                            fill="currentColor"
-                            d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12C5,7.9 8.2,4.73 12.2,4.73C15.29,4.73 17.1,6.7 17.1,6.7L19,4.72C19,4.72 16.56,2 12.1,2C6.42,2 2.03,6.8 2.03,12C2.03,17.05 6.16,22 12.25,22C17.6,22 21.5,18.33 21.5,12.91C21.5,11.76 21.35,11.1 21.35,11.1V11.1Z"
-                        />
-                     </svg>
-                   )}
-                   {isLoggingIn ? 'Signing in...' : 'Continue with Google'}
-               </button>
-               
-               <p className="text-[10px] text-gray-400 dark:text-slate-500 px-4">
-                 On iPhone/Safari? If the button above fails, ensure "Prevent Cross-Site Tracking" is disabled in Safari settings, or try the button below.
-               </p>
 
-               <button 
-                  onClick={handleLoginRedirect} 
-                  disabled={isLoggingIn}
-                  className={`w-full py-3.5 bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors shadow-sm active:scale-[0.98] text-sm ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
-               >
-                   {isLoggingIn ? (
-                     <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
-                   ) : (
-                     'Alternative: Sign in via Redirect'
-                   )}
-               </button>
-
-               <div className="pt-4 border-t border-gray-100 dark:border-slate-700 mt-4">
-                 <button 
-                   onClick={() => { localStorage.clear(); sessionStorage.clear(); window.location.reload(); }}
-                   className="text-[10px] text-gray-400 hover:text-gray-600 underline flex items-center gap-1 mx-auto"
-                 >
-                   Stuck? Clear browser session & retry
-                 </button>
-                 <p className="text-[9px] text-gray-300 mt-2 italic">
-                   Note: The "Continue to: gen-lang-client..." name you see during login is the internal Firebase ID for your Keepy project.
-                 </p>
+             <div className="space-y-1.5">
+               <label className="text-xs font-bold text-gray-700 dark:text-slate-300 ml-1">Email Address</label>
+               <div className="relative">
+                 <Icons.Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                 <input 
+                   type="email" 
+                   value={authMode === 'login' ? loginEmail : regEmail} 
+                   onChange={e => {
+                     if (authMode === 'login') setLoginEmail(e.target.value);
+                     else setRegEmail(e.target.value);
+                   }}
+                   placeholder="jane@example.com"
+                   className="w-full pl-11 pr-4 py-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-pink-500 transition-all dark:text-white"
+                   disabled={isLoggingIn}
+                   required
+                 />
                </div>
              </div>
+
+             <div className="space-y-1.5">
+               <div className="flex justify-between items-center px-1">
+                 <label className="text-xs font-bold text-gray-700 dark:text-slate-300">Password</label>
+               </div>
+               <div className="relative">
+                 <Icons.Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                 <input 
+                   type="password" 
+                   value={authMode === 'login' ? loginPassword : regPassword} 
+                   onChange={e => authMode === 'login' ? setLoginPassword(e.target.value) : setRegPassword(e.target.value)}
+                   placeholder="••••••••"
+                   className="w-full pl-11 pr-4 py-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-pink-500 transition-all dark:text-white"
+                   disabled={isLoggingIn}
+                   required
+                   minLength={6}
+                 />
+               </div>
+             </div>
+
+             <button 
+                type="submit" 
+                disabled={isLoggingIn}
+                className="w-full py-4 bg-pink-500 hover:bg-pink-600 text-white rounded-xl font-bold transition-all shadow-lg shadow-pink-500/25 active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+             >
+               {isLoggingIn ? (
+                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+               ) : (
+                 authMode === 'login' ? 'Sign In' : 'Create Account'
+               )}
+             </button>
+           </form>
+
+           <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-700 text-center">
+             <p className="text-sm text-gray-500 dark:text-slate-400">
+               {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
+               <button 
+                 onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setLoginError(''); }}
+                 className="font-bold text-pink-500 hover:underline"
+               >
+                 {authMode === 'login' ? 'Sign Up' : 'Log In'}
+               </button>
+             </p>
            </div>
         </div>
+
+        {/* Floating Theme Toggle */}
+        <button 
+          onClick={() => setDarkMode(!darkMode)}
+          className="fixed bottom-6 right-6 p-3 bg-white dark:bg-slate-800 rounded-full shadow-lg border border-gray-100 dark:border-slate-700 text-gray-600 dark:text-slate-400 z-20"
+        >
+          {darkMode ? <Icons.Sun className="w-6 h-6" /> : <Icons.Moon className="w-6 h-6" />}
+        </button>
       </div>
     );
   }
@@ -1541,15 +1508,16 @@ export default function App() {
           <div className="flex flex-col items-center justify-center p-6 bg-gray-50 dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-2xl relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-pink-400/10 to-violet-500/10 pointer-events-none"></div>
             
-            {user?.photoURL ? (
-              <img src={user.photoURL} alt={user.displayName || "User"} className="w-20 h-20 rounded-full shadow-lg border-4 border-white dark:border-slate-800 mb-4 relative z-10" />
-            ) : (
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-pink-500 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-pink-500/20 mb-4 border-4 border-white dark:border-slate-800 relative z-10">
-                <Icons.User className="w-8 h-8" />
-              </div>
-            )}
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-pink-500 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-pink-500/20 mb-4 border-4 border-white dark:border-slate-800 relative z-10">
+              <Icons.User className="w-8 h-8" />
+            </div>
             
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white relative z-10">{user?.displayName || "Anonymous User"}</h3>
+            <div className="flex items-center gap-2 relative z-10">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">{user?.displayName || "Member"}</h3>
+              {user?.email === 'cassandrat897@gmail.com' && (
+                <span className="px-2 py-0.5 bg-pink-500 text-[10px] text-white font-bold rounded-full uppercase tracking-wider">Admin</span>
+              )}
+            </div>
             <p className="text-sm text-gray-500 dark:text-gray-400 relative z-10">{user?.email}</p>
           </div>
           
@@ -1557,7 +1525,7 @@ export default function App() {
              <div className="p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl space-y-3">
                 <div className="flex justify-between items-center text-sm">
                    <span className="text-gray-500 font-medium">Joined</span>
-                   <span className="text-gray-900 dark:text-white font-mono">{user?.metadata.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString() : 'Unknown'}</span>
+                   <span className="text-gray-900 dark:text-white font-mono">{user?.metadata.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString() : 'Today'}</span>
                 </div>
                 <div className="border-t border-gray-100 dark:border-slate-700"></div>
                 <div className="flex justify-between items-center text-sm">
@@ -1569,23 +1537,18 @@ export default function App() {
                       <div className="border-t border-gray-100 dark:border-slate-700"></div>
                       <div className="flex justify-between items-center text-sm">
                          <span className="text-gray-500 font-medium flex items-center gap-1">
-                            <Icons.User className="w-4 h-4" /> App Users (Admin View)
+                            <Icons.Users className="w-4 h-4" /> Total Platform Users
                          </span>
-                         <span className="text-gray-900 dark:text-white font-mono font-bold bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-md">{totalUsers}</span>
+                         <span className="text-gray-900 dark:text-white font-mono font-bold bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-md">{totalUsers}</span>
                       </div>
                    </>
                 )}
              </div>
           </div>
           
-          <div className="grid grid-cols-2 gap-3">
-             <button onClick={() => { setIsProfileModalOpen(false); handleLogout(); }} className="py-3.5 bg-gray-50 hover:bg-gray-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-300 rounded-xl font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
-               <Icons.LogOut className="w-5 h-5" /> Sign Out
-             </button>
-             <button onClick={handleSwitchAccount} className="py-3.5 bg-pink-50 hover:bg-pink-100 dark:bg-pink-900/20 dark:hover:bg-pink-900/30 text-pink-600 dark:text-pink-400 rounded-xl font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
-               <Icons.Users className="w-5 h-5" /> Switch User
-             </button>
-          </div>
+          <button onClick={() => { setIsProfileModalOpen(false); handleLogout(); }} className="w-full py-3.5 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
+            <Icons.LogOut className="w-5 h-5" /> Sign Out
+          </button>
         </div>
       </Modal>
 

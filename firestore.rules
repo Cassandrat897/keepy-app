@@ -15,9 +15,10 @@ service cloud.firestore {
     // ====== USERS ======
     function isValidUser(data) {
       return data.keys().size() >= 3
-        && data.keys().size() <= 5
+        && data.keys().size() <= 6
         && data.email is string && data.email.size() <= 256
-        && data.createdAt is number
+        && (data.get('name', '') is string)
+        && (data.get('createdAt', 0) is number)
         && data.lastLogin is number;
     }
 
@@ -31,11 +32,16 @@ service cloud.firestore {
       allow update: if isSignedIn()
                    && isValidId(userId)
                    && request.auth.uid == userId
-                   && incoming().createdAt == existing().createdAt
+                   && (incoming().get('createdAt', 0) == existing().get('createdAt', 0))
                    && incoming().email == existing().email
                    && isValidUser(incoming())
-                   && incoming().diff(existing()).affectedKeys().hasOnly(['lastLogin']);
+                   && incoming().diff(existing()).affectedKeys().hasOnly(['lastLogin', 'name']);
       allow delete: if isAdmin();
+    }
+
+    // ====== CONNECTION TEST ======
+    match /test/connection {
+      allow get: if true;
     }
 
     // ====== FOLDERS ======
@@ -47,8 +53,8 @@ service cloud.firestore {
     }
 
     match /folders/{folderId} {
-      allow get: if isSignedIn() && isValidId(folderId) && resource.data.userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(folderId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isSignedIn()
                    && isValidId(folderId)
                    && isValidFolder(incoming());
@@ -57,10 +63,8 @@ service cloud.firestore {
                    && existing().userId == request.auth.uid
                    && incoming().userId == existing().userId
                    && isValidFolder(incoming())
-                   && incoming().diff(existing()).affectedKeys().hasAny(['name']);
-      allow delete: if isSignedIn()
-                   && isValidId(folderId)
-                   && existing().userId == request.auth.uid;
+                   && incoming().diff(existing()).affectedKeys().hasOnly(['name']);
+      allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
     }
 
     // ====== CATEGORIES ======
@@ -75,8 +79,8 @@ service cloud.firestore {
     }
 
     match /categories/{categoryId} {
-      allow get: if isSignedIn() && isValidId(categoryId) && resource.data.userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(categoryId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isSignedIn()
                    && isValidId(categoryId)
                    && isValidCategory(incoming());
@@ -85,10 +89,8 @@ service cloud.firestore {
                    && existing().userId == request.auth.uid
                    && incoming().userId == existing().userId
                    && isValidCategory(incoming())
-                   && incoming().diff(existing()).affectedKeys().hasAny(['name', 'color', 'parentId', 'folderId']);
-      allow delete: if isSignedIn()
-                   && isValidId(categoryId)
-                   && existing().userId == request.auth.uid;
+                   && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'color', 'parentId', 'folderId']);
+      allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
     }
 
     // ====== PROFILES ======
@@ -105,8 +107,8 @@ service cloud.firestore {
     }
 
     match /profiles/{profileId} {
-      allow get: if isSignedIn() && isValidId(profileId) && resource.data.userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(profileId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isSignedIn()
                    && isValidId(profileId)
                    && isValidProfile(incoming());
@@ -115,10 +117,8 @@ service cloud.firestore {
                    && existing().userId == request.auth.uid
                    && incoming().userId == existing().userId
                    && isValidProfile(incoming())
-                   && incoming().diff(existing()).affectedKeys().hasAny(['username', 'platform', 'categoryId', 'displayName', 'notes']);
-      allow delete: if isSignedIn()
-                   && isValidId(profileId)
-                   && existing().userId == request.auth.uid;
+                   && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'platform', 'categoryId', 'displayName', 'notes']);
+      allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
     }
 
     // ====== SHARED LISTS ======
