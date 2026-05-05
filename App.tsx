@@ -4,7 +4,7 @@ import { Icons } from './components/Icon';
 import { Modal } from './components/Modal';
 import { ProfileCard } from './components/ProfileCard';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, getDocFromServer, query, where } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
@@ -163,6 +163,11 @@ export default function App() {
 
   // --- Local Data Migration ---
   useEffect(() => {
+    getRedirectResult(auth).catch(e => {
+        console.error("Redirect auth error:", e);
+        setLoginError("Redirect login failed: " + e.message);
+    });
+
     if (!user) return;
     
     const migrateLocalData = async () => {
@@ -316,11 +321,31 @@ export default function App() {
   // --- Auth Handler ---
   const handleLogin = async () => {
     try {
+      setLoginError('');
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setLoginError('Failed to sign in. Please try again.');
+      let errorMsg = e.message || 'Failed to sign in. Please try again.';
+      if (e.code === 'auth/popup-blocked') {
+         errorMsg = 'Popup was blocked by your browser. Please allow popups or open the app in Safari/Chrome directly.';
+      } else if (e.code === 'auth/popup-closed-by-user') {
+         errorMsg = 'Sign in popup was closed before completing.';
+      } else if (e.code === 'auth/web-storage-unsupported') {
+         errorMsg = 'Your browser blocks third-party cookies/storage. Please open in a normal browser tab or disable "Prevent Cross-Site Tracking".';
+      }
+      setLoginError("Login failed via Popup: " + errorMsg);
+    }
+  };
+
+  const handleLoginRedirect = async () => {
+    try {
+      setLoginError('');
+      const provider = new GoogleAuthProvider();
+      await signInWithRedirect(auth, provider);
+    } catch (e: any) {
+      console.error(e);
+      setLoginError("Redirect login initialization failed: " + e.message);
     }
   };
 
@@ -1005,6 +1030,18 @@ export default function App() {
                     />
                  </svg>
                  Continue with Google
+             </button>
+             {/* Mobile Alternative */}
+             <div className="relative pt-2">
+                <div className="absolute inset-0 flex items-center pt-2">
+                  <span className="w-full border-t border-gray-100 dark:border-slate-700" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase pt-2">
+                  <span className="bg-white dark:bg-slate-800 px-2 text-gray-400 font-semibold tracking-wider">Or Mobile Fallback</span>
+                </div>
+             </div>
+             <button onClick={handleLoginRedirect} className="w-full py-3.5 bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors shadow-sm active:scale-[0.98] text-sm">
+                 Sign in via Browser Redirect
              </button>
            </div>
         </div>
