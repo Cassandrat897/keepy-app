@@ -1078,8 +1078,16 @@ export default function App() {
                   <span className="bg-white dark:bg-slate-800 px-2 text-gray-400 font-semibold tracking-wider">Or Mobile Fallback</span>
                 </div>
              </div>
-             <button onClick={handleLoginRedirect} className="w-full py-3.5 bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors shadow-sm active:scale-[0.98] text-sm">
-                 Sign in via Browser Redirect
+             <button 
+                onClick={handleLoginRedirect} 
+                disabled={isLoggingIn}
+                className={`w-full py-3.5 bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors shadow-sm active:scale-[0.98] text-sm ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
+             >
+                 {isLoggingIn ? (
+                   <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                 ) : (
+                   'Sign in via Browser Redirect'
+                 )}
              </button>
            </div>
         </div>

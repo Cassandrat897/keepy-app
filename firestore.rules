@@ -47,7 +47,8 @@ service cloud.firestore {
     }
 
     match /folders/{folderId} {
-      allow read: if isSignedIn() && isValidId(folderId) && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(folderId) && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn()
                    && isValidId(folderId)
                    && isValidFolder(incoming());
@@ -74,7 +75,8 @@ service cloud.firestore {
     }
 
     match /categories/{categoryId} {
-      allow read: if isSignedIn() && isValidId(categoryId) && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(categoryId) && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn()
                    && isValidId(categoryId)
                    && isValidCategory(incoming());
@@ -103,7 +105,8 @@ service cloud.firestore {
     }
 
     match /profiles/{profileId} {
-      allow read: if isSignedIn() && isValidId(profileId) && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(profileId) && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn()
                    && isValidId(profileId)
                    && isValidProfile(incoming());
