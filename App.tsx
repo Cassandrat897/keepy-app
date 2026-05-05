@@ -358,8 +358,10 @@ export default function App() {
          errorMsg = 'Sign in popup was closed before completing.';
       } else if (e.code === 'auth/web-storage-unsupported') {
          errorMsg = 'Your browser blocks third-party cookies/storage. Please open in a normal browser tab or disable "Prevent Cross-Site Tracking".';
+      } else if (e.code === 'auth/unauthorized-domain') {
+         errorMsg = 'This domain (' + window.location.hostname + ') is not authorized. Please double-check that this EXACT domain is listed in your Firebase Console -> Authentication -> Settings -> Authorized Domains. It can take 2 minutes for changes to apply.';
       }
-      setLoginError("Login failed via Popup: " + errorMsg);
+      setLoginError("Login failed: " + errorMsg);
     } finally {
       setIsLoggingIn(false);
     }
