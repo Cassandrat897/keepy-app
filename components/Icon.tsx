@@ -29,6 +29,7 @@ import {
   X,
   MapPin,
   User,
+  Users,
   LogOut,
   AlertTriangle,
 } from 'lucide-react';
@@ -98,6 +99,7 @@ export const Icons = {
   TikTok,
   TwitterX,
   User,
+  Users,
   LogOut,
   AlertTriangle
 };
