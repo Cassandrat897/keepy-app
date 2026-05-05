@@ -365,13 +365,14 @@ export default function App() {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ 
         prompt: 'select_account',
-        // Try to force the auth domain context
+        // Request fresh auth
         auth_type: 'reauthenticate'
       });
       
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       if (isMobile) {
         localStorage.setItem('keepy_login_pending', 'true');
+        // Redirect is more reliable on iOS Safari
         await signInWithRedirect(auth, provider);
       } else {
         await signInWithPopup(auth, provider);
@@ -415,11 +416,14 @@ export default function App() {
 
   const handleSwitchAccount = async () => {
     setIsProfileModalOpen(false);
+    // Completely clear all app state
+    localStorage.clear();
+    sessionStorage.clear();
     await signOut(auth);
-    // Short delay to ensure sign out is processed before triggering login
+    // Force a small delay for the state to propagate
     setTimeout(() => {
-      handleLogin();
-    }, 100);
+      window.location.reload(); 
+    }, 200);
   };
 
   // --- Helpers ---
@@ -1131,6 +1135,18 @@ export default function App() {
                      'Alternative: Sign in via Redirect'
                    )}
                </button>
+
+               <div className="pt-4 border-t border-gray-100 dark:border-slate-700 mt-4">
+                 <button 
+                   onClick={() => { localStorage.clear(); sessionStorage.clear(); window.location.reload(); }}
+                   className="text-[10px] text-gray-400 hover:text-gray-600 underline flex items-center gap-1 mx-auto"
+                 >
+                   Stuck? Clear browser session & retry
+                 </button>
+                 <p className="text-[9px] text-gray-300 mt-2 italic">
+                   Note: The "Continue to: gen-lang-client..." name you see during login is the internal Firebase ID for your Keepy project.
+                 </p>
+               </div>
              </div>
            </div>
         </div>
