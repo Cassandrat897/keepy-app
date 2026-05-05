@@ -166,14 +166,26 @@ export default function App() {
   useEffect(() => {
     // Only check redirect ONCE on mount
     const checkRedirect = async () => {
+        const isLoginAttempt = localStorage.getItem('keepy_login_pending');
         try {
             const result = await getRedirectResult(auth);
             if (result) {
                 console.log("Redirect login successful");
+                localStorage.removeItem('keepy_login_pending');
+            } else if (isLoginAttempt) {
+                // If we were expecting a login but result is null, and onAuthStateChanged hasn't fired with a user yet
+                // it might be a cross-site tracking block.
+                // We wait a bit to see if onAuthStateChanged picks it up.
+                setTimeout(() => {
+                  if (!auth.currentUser) {
+                    setLoginError("Login failed to complete. If you are on iPhone, please ensure 'Prevent Cross-Site Tracking' is DISABLED in Safari Settings, or try opening the app directly in Safari.");
+                    localStorage.removeItem('keepy_login_pending');
+                  }
+                }, 2000);
             }
         } catch (e: any) {
-            console.warn("Redirect auth error (non-fatal):", e);
-            // Don't show error for normal case where user just opens the app
+            console.warn("Redirect auth error:", e);
+            localStorage.removeItem('keepy_login_pending');
             if (e.code && e.code !== 'auth/popup-closed-by-user') {
                 setLoginError("Login failed: " + (e.message || "Unknown error") + " (Code: " + e.code + ")");
             }
@@ -351,10 +363,15 @@ export default function App() {
       setIsLoggingIn(true);
       setLoginError('');
       const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      // On mobile, popup is often blocked or fails. Redirect is safer.
+      provider.setCustomParameters({ 
+        prompt: 'select_account',
+        // Try to force the auth domain context
+        auth_type: 'reauthenticate'
+      });
+      
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       if (isMobile) {
+        localStorage.setItem('keepy_login_pending', 'true');
         await signInWithRedirect(auth, provider);
       } else {
         await signInWithPopup(auth, provider);
@@ -383,6 +400,7 @@ export default function App() {
       setLoginError('');
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
+      localStorage.setItem('keepy_login_pending', 'true');
       await signInWithRedirect(auth, provider);
     } catch (e: any) {
       console.error(e);
