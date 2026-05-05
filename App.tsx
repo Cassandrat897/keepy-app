@@ -83,6 +83,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState('');
 
   // --- App State ---
@@ -163,10 +164,22 @@ export default function App() {
 
   // --- Local Data Migration ---
   useEffect(() => {
-    getRedirectResult(auth).catch(e => {
-        console.error("Redirect auth error:", e);
-        setLoginError("Redirect login failed: " + e.message);
-    });
+    // Check for redirect results on mount
+    const checkRedirect = async () => {
+        try {
+            const result = await getRedirectResult(auth);
+            if (result) {
+                console.log("Redirect login successful");
+            }
+        } catch (e: any) {
+            console.warn("Redirect auth error (non-fatal):", e);
+            if (e.code !== 'auth/popup-closed-by-user') {
+                setLoginError("Login failed: " + (e.message || "Unknown error"));
+            }
+        }
+    };
+    
+    checkRedirect();
 
     if (!user) return;
     
@@ -256,7 +269,8 @@ export default function App() {
       const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
          setTotalUsers(snapshot.size);
       }, (e) => {
-         console.error("Could not fetch total users:", e);
+         // Silently fail for users since it's just a stat for admin
+         console.warn("Could not fetch total users:", e);
       });
       return () => unsub();
     }
@@ -277,7 +291,10 @@ export default function App() {
         dbFolders.push({ id: doc.id, name: data.name, userId: data.userId });
       });
       setFolders(dbFolders);
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'folders'));
+    }, (error) => {
+      console.warn("Folder sync error:", error);
+      handleFirestoreError(error, OperationType.GET, 'folders');
+    });
 
     const unsubCategories = onSnapshot(query(collection(db, 'categories'), where('userId', '==', user.uid)), (snapshot) => {
       const dbCategories: Category[] = [];
@@ -288,7 +305,10 @@ export default function App() {
         });
       });
       setCategories(dbCategories);
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'categories'));
+    }, (error) => {
+      console.warn("Category sync error:", error);
+      handleFirestoreError(error, OperationType.GET, 'categories');
+    });
 
     const unsubProfiles = onSnapshot(query(collection(db, 'profiles'), where('userId', '==', user.uid)), (snapshot) => {
       const dbProfiles: Profile[] = [];
@@ -299,7 +319,10 @@ export default function App() {
         });
       });
       setProfiles(dbProfiles);
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'profiles'));
+    }, (error) => {
+      console.warn("Profile sync error:", error);
+      handleFirestoreError(error, OperationType.GET, 'profiles');
+    });
 
     return () => {
       unsubFolders();
@@ -320,7 +343,9 @@ export default function App() {
 
   // --- Auth Handler ---
   const handleLogin = async () => {
+    if (isLoggingIn) return;
     try {
+      setIsLoggingIn(true);
       setLoginError('');
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
@@ -335,17 +360,22 @@ export default function App() {
          errorMsg = 'Your browser blocks third-party cookies/storage. Please open in a normal browser tab or disable "Prevent Cross-Site Tracking".';
       }
       setLoginError("Login failed via Popup: " + errorMsg);
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
   const handleLoginRedirect = async () => {
+    if (isLoggingIn) return;
     try {
+      setIsLoggingIn(true);
       setLoginError('');
       const provider = new GoogleAuthProvider();
       await signInWithRedirect(auth, provider);
     } catch (e: any) {
       console.error(e);
       setLoginError("Redirect login initialization failed: " + e.message);
+      setIsLoggingIn(false);
     }
   };
 
@@ -1022,14 +1052,22 @@ export default function App() {
                   {loginError}
                 </div>
              )}
-             <button onClick={handleLogin} className="w-full py-3.5 bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shadow-sm active:scale-[0.98]">
-                 <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-900 dark:text-white">
-                    <path
-                        fill="currentColor"
-                        d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12C5,7.9 8.2,4.73 12.2,4.73C15.29,4.73 17.1,6.7 17.1,6.7L19,4.72C19,4.72 16.56,2 12.1,2C6.42,2 2.03,6.8 2.03,12C2.03,17.05 6.16,22 12.25,22C17.6,22 21.5,18.33 21.5,12.91C21.5,11.76 21.35,11.1 21.35,11.1V11.1Z"
-                    />
-                 </svg>
-                 Continue with Google
+             <button 
+                onClick={handleLogin} 
+                disabled={isLoggingIn}
+                className={`w-full py-3.5 bg-white dark:bg-slate-900 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shadow-sm active:scale-[0.98] ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
+             >
+                 {isLoggingIn ? (
+                   <div className="w-5 h-5 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+                 ) : (
+                   <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-900 dark:text-white">
+                      <path
+                          fill="currentColor"
+                          d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12C5,7.9 8.2,4.73 12.2,4.73C15.29,4.73 17.1,6.7 17.1,6.7L19,4.72C19,4.72 16.56,2 12.1,2C6.42,2 2.03,6.8 2.03,12C2.03,17.05 6.16,22 12.25,22C17.6,22 21.5,18.33 21.5,12.91C21.5,11.76 21.35,11.1 21.35,11.1V11.1Z"
+                      />
+                   </svg>
+                 )}
+                 {isLoggingIn ? 'Signing in...' : 'Continue with Google'}
              </button>
              {/* Mobile Alternative */}
              <div className="relative pt-2">

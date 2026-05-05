@@ -41,14 +41,13 @@ service cloud.firestore {
     // ====== FOLDERS ======
     function isValidFolder(data) {
       return data.keys().size() >= 2
-        && data.keys().size() <= 5
-        && data.name is string && data.name.size() <= 100
+        && data.keys().size() <= 6
+        && data.name is string && data.name.size() <= 200
         && data.userId is string && data.userId == request.auth.uid;
     }
 
     match /folders/{folderId} {
-      allow get: if isSignedIn() && isValidId(folderId) && existing().userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && isValidId(folderId) && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn()
                    && isValidId(folderId)
                    && isValidFolder(incoming());
@@ -66,17 +65,16 @@ service cloud.firestore {
     // ====== CATEGORIES ======
     function isValidCategory(data) {
        return data.keys().size() >= 3
-        && data.keys().size() <= 6
-        && data.name is string && data.name.size() <= 100
-        && data.color is string && data.color.size() <= 60
+        && data.keys().size() <= 8
+        && data.name is string && data.name.size() <= 200
+        && data.color is string && data.color.size() <= 100
         && data.userId is string && data.userId == request.auth.uid
-        && (data.get('parentId', '') is string && data.get('parentId', '').size() <= 128)
-        && (data.get('folderId', '') is string && data.get('folderId', '').size() <= 128);
+        && (data.get('parentId', '') is string)
+        && (data.get('folderId', '') is string);
     }
 
     match /categories/{categoryId} {
-      allow get: if isSignedIn() && isValidId(categoryId) && existing().userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && isValidId(categoryId) && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn()
                    && isValidId(categoryId)
                    && isValidCategory(incoming());
@@ -94,19 +92,18 @@ service cloud.firestore {
     // ====== PROFILES ======
     function isValidProfile(data) {
        return data.keys().size() >= 5
-        && data.keys().size() <= 8
-        && data.username is string && data.username.size() <= 1000
-        && data.platform is string && data.platform.size() <= 50
+        && data.keys().size() <= 10
+        && data.username is string && data.username.size() <= 2000
+        && data.platform is string && data.platform.size() <= 100
         && data.categoryId is string && data.categoryId.size() <= 128
         && data.createdAt is number
         && data.userId is string && data.userId == request.auth.uid
-        && (data.get('displayName', '') is string && data.get('displayName', '').size() <= 1000)
-        && (data.get('notes', '') is string && data.get('notes', '').size() <= 5000);
+        && (data.get('displayName', '') is string)
+        && (data.get('notes', '') is string);
     }
 
     match /profiles/{profileId} {
-      allow get: if isSignedIn() && isValidId(profileId) && existing().userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && isValidId(profileId) && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn()
                    && isValidId(profileId)
                    && isValidProfile(incoming());
