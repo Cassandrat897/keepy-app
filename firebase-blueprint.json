@@ -6,6 +6,7 @@
       "type": "object",
       "properties": {
         "email": { "type": "string" },
+        "name": { "type": "string" },
         "createdAt": { "type": "number" },
         "lastLogin": { "type": "number" }
       },

@@ -197,33 +197,15 @@ export default function App() {
       setAuthChecking(false);
 
       if (currentUser) {
-        try {
-          const userRef = doc(db, 'users', currentUser.uid);
-          const userSnap = await getDocFromServer(userRef).catch(() => null);
-          
-          if (!userSnap || !userSnap.exists()) {
-            await setDoc(userRef, {
-              email: currentUser.email || '',
-              name: currentUser.displayName || '',
-              createdAt: Date.now(),
-              lastLogin: Date.now()
-            });
-          } else {
-            await setDoc(userRef, {
-              name: currentUser.displayName || userSnap.data().name || '',
-              lastLogin: Date.now()
-            }, { merge: true });
-          }
-        } catch (e) {
-          console.error("Failed to sync user:", e);
-        }
+        await syncUser(currentUser);
       }
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (user?.email === 'cassandrat897@gmail.com') {
+    if (user?.email?.toLowerCase() === 'cassandrat897@gmail.com') {
+      console.log("Admin access detected: cassandrat897@gmail.com");
       const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
         setTotalUsers(snapshot.size);
         const list: any[] = [];
@@ -233,6 +215,7 @@ export default function App() {
         setUsersList(list);
       }, (e) => {
         console.warn("Admin: Could not fetch total users:", e);
+        handleFirestoreError(e, OperationType.LIST, 'users');
       });
       return () => unsub();
     } else {
@@ -307,6 +290,45 @@ export default function App() {
   }, [darkMode]);
 
   // --- Auth Handlers ---
+  const syncUser = async (currentUser: User) => {
+    try {
+      console.log("Syncing user profile for:", currentUser.email);
+      const userRef = doc(db, 'users', currentUser.uid);
+      
+      const userSnap = await getDocFromServer(userRef).catch((e) => {
+        if (e.message?.includes('permission')) {
+            console.log("No permission to GET user doc (expected for new users), proceeding to set.");
+            return null;
+        }
+        handleFirestoreError(e, OperationType.GET, `users/${currentUser.uid}`);
+        throw e;
+      });
+      
+      const now = Date.now();
+      const userData = {
+        email: currentUser.email || '',
+        name: currentUser.displayName || '',
+        lastLogin: now,
+        updatedAt: now
+      };
+
+      if (!userSnap || !userSnap.exists()) {
+        console.log("Creating new user profile...");
+        await setDoc(userRef, {
+          ...userData,
+          createdAt: now,
+        });
+      } else {
+        console.log("Updating existing user profile...");
+        await setDoc(userRef, userData, { merge: true });
+      }
+      console.log("User profile sync complete.");
+    } catch (e) {
+      console.error("Failed to sync user profile:", e);
+      handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}`);
+    }
+  };
+
   const handleRegister = async (e: React.FormEvent) => {
      e.preventDefault();
      if (!regEmail || !regPassword || !regName) return;
@@ -315,7 +337,7 @@ export default function App() {
      try {
        const userCredential = await createUserWithEmailAndPassword(auth, regEmail, regPassword);
        await updateProfile(userCredential.user, { displayName: regName });
-       setUser({ ...userCredential.user, displayName: regName });
+       // onAuthStateChanged will trigger syncUser
      } catch (e: any) {
        console.error(e);
        setLoginError(e.message || "Failed to register.");
@@ -362,18 +384,8 @@ export default function App() {
     setLoginError('');
     const provider = new GoogleAuthProvider();
     try {
-      const result = await signInWithPopup(auth, provider);
-      // Create user profile in Firestore if it doesn't exist
-      const userDoc = await getDocFromServer(doc(db, 'users', result.user.uid));
-      if (!userDoc.exists()) {
-        await setDoc(doc(db, 'users', result.user.uid), {
-          uid: result.user.uid,
-          email: result.user.email,
-          displayName: result.user.displayName,
-          createdAt: new Date().toISOString(),
-          lastLogin: new Date().toISOString(),
-        });
-      }
+      await signInWithPopup(auth, provider);
+      // onAuthStateChanged will handle Firestore profile creation via syncUser
     } catch (e: any) {
       console.error(e);
       if (e.code !== 'auth/popup-closed-by-user') {
@@ -573,13 +585,9 @@ export default function App() {
          }))
        };
     });
-    const unfiledCats = rootCategories.filter(c => !c.folderId);
+    
     return {
-      folders: folderGroups,
-      unfiled: sortItems(unfiledCats, categorySort).map(cat => ({
-        ...cat,
-        children: sortItems(categories.filter(sub => sub.parentId === cat.id), 'a-z')
-      }))
+      folders: folderGroups
     };
   }, [categories, folders, categorySort, folderSort]);
 
@@ -742,21 +750,38 @@ export default function App() {
   };
 
   const handleDeleteFolder = async (id: string) => {
-     if(window.confirm("Delete this folder? Categories inside will be 'Unfiled'.") && user) {
-        try {
-          const batch = writeBatch(db);
-          batch.delete(doc(db, 'folders', id));
-          categories.forEach(c => {
-             if (c.folderId === id) {
-               batch.update(doc(db, 'categories', c.id), { folderId: '' });
-             }
-          });
-          await batch.commit();
-          if (selectedFolderId === id) setSelectedFolderId(null);
-        } catch (e) {
-          handleFirestoreError(e, OperationType.DELETE, `folders/${id}`);
-        }
-     }
+      const otherFolders = folders.filter(f => f.id !== id);
+      
+      if (otherFolders.length === 0) {
+          const hasCategories = categories.some(c => c.folderId === id);
+          if (hasCategories) {
+              alert("Wait! You cannot delete the only folder while it has categories in it. Please create or move them first.");
+              return;
+          }
+      }
+
+      if(window.confirm(otherFolders.length > 0 
+          ? `Delete this folder? Categories inside will be moved to '${otherFolders[0].name}'.` 
+          : "Delete this folder?") && user) {
+         try {
+           const batch = writeBatch(db);
+           batch.delete(doc(db, 'folders', id));
+           
+           if (otherFolders.length > 0) {
+              const targetFolderId = otherFolders[0].id;
+              categories.forEach(c => {
+                 if (c.folderId === id) {
+                   batch.update(doc(db, 'categories', c.id), { folderId: targetFolderId });
+                 }
+              });
+           }
+           
+           await batch.commit();
+           if (selectedFolderId === id) setSelectedFolderId(null);
+         } catch (e) {
+           handleFirestoreError(e, OperationType.DELETE, `folders/${id}`);
+         }
+      }
   };
 
   const handleSaveProfile = async () => {
@@ -1337,42 +1362,6 @@ export default function App() {
                 )}
             </div>
           ))}
-          {displayTree.unfiled.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">
-                  <h4 className="px-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Unfiled</h4>
-                  {displayTree.unfiled.map(cat => (
-                      <div key={cat.id} className="space-y-1">
-                          <div className={`group flex items-center rounded-xl transition-colors pr-2 ${selectedCategoryId === cat.id ? 'bg-gray-100 dark:bg-slate-800' : 'hover:bg-gray-50 dark:hover:bg-slate-800/50'}`}>
-                                <div className="w-8 flex justify-center flex-shrink-0">
-                                   {cat.children.length > 0 && (
-                                        <button onClick={(e) => { e.stopPropagation(); toggleCategoryExpand(cat.id); }} className="text-gray-400">
-                                            {expandedCategoryIds.includes(cat.id) ? <Icons.ChevronDown className="w-4 h-4" /> : <Icons.ChevronRight className="w-4 h-4" />}
-                                        </button>
-                                   )}
-                                </div>
-                                <button onClick={() => handleSelectCategory(cat.id)} className={`flex-1 flex items-center gap-3 py-2 text-left ${selectedCategoryId === cat.id ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-slate-400'}`}>
-                                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }}></span>
-                                    <span className="truncate">{cat.name}</span>
-                                </button>
-                                <div className="opacity-0 group-hover:opacity-100 flex">
-                                    <button onClick={(e) => { e.stopPropagation(); handleOpenCategoryModal(cat); }} className="p-1.5 text-gray-400 hover:text-blue-500"><Icons.Edit2 className="w-3 h-3" /></button>
-                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id); }} className="p-1.5 text-gray-400 hover:text-red-500"><Icons.Trash2 className="w-3.5 h-3.5" /></button>
-                                </div>
-                          </div>
-                          {expandedCategoryIds.includes(cat.id) && (
-                            <div className="ml-8 space-y-1">
-                                {cat.children.map(sub => (
-                                     <div key={sub.id} onClick={() => handleSelectCategory(sub.id)} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer ${selectedCategoryId === sub.id ? 'bg-gray-100 dark:bg-slate-800' : 'hover:bg-gray-50'}`}>
-                                         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: sub.color }}></span>
-                                         <span className="text-sm text-gray-600 dark:text-slate-400">{sub.name}</span>
-                                     </div>
-                                ))}
-                            </div>
-                          )}
-                      </div>
-                  ))}
-              </div>
-          )}
         </nav>
         
         <div className="p-4 border-t border-gray-200 dark:border-slate-800 space-y-2">
@@ -1768,9 +1757,6 @@ export default function App() {
                          {folders.map(f => (
                              <option key={f.id} value={f.id}>{f.name}</option>
                          ))}
-                         {categories.some(c => !c.parentId && !c.folderId) && (
-                             <option value="unfiled">Unfiled</option>
-                         )}
                      </select>
                   )}
                </div>
@@ -1824,7 +1810,6 @@ export default function App() {
                          {categories
                              .filter(c => {
                                   if (!newProfileFolderId) return false;
-                                  if (newProfileFolderId === 'unfiled') return !c.parentId && !c.folderId;
                                   return !c.parentId && c.folderId === newProfileFolderId;
                              })
                              .sort((a,b) => a.name.localeCompare(b.name))
@@ -1974,18 +1959,7 @@ export default function App() {
                             );
                         })}
 
-                        {/* Unfiled */}
-                        {(() => {
-                            const eligible = categories.filter(c => !c.parentId && c.id !== editingCategoryId && !c.folderId);
-                            if (eligible.length === 0) return null;
-                            return (
-                                <optgroup label="Unfiled">
-                                    {eligible.sort((a,b) => a.name.localeCompare(b.name)).map(c => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                    ))}
-                                </optgroup>
-                            );
-                        })()}
+                        {/* Unfiled categories are no longer allowed to be selectable if unfiled */}
                       </select>
 
                       {/* Feedback for move */}
@@ -2266,7 +2240,7 @@ export default function App() {
               <a href={getProfileLink(selectedProfile)} target="_blank" rel="noreferrer" className="col-span-2 py-3 bg-blue-500 text-white rounded-xl font-bold flex items-center justify-center gap-2">Open</a>
               <button onClick={() => handleStartEdit(selectedProfile)} className="py-3 bg-gray-100 dark:bg-slate-800 rounded-xl font-bold">Edit</button>
               <button onClick={() => handleDeleteProfile(selectedProfile.id)} className="py-3 bg-red-50 text-red-500 rounded-xl font-bold">Delete</button>
-           </div>
+            </div>
         </Modal>
       )}
 

@@ -7,35 +7,20 @@ service cloud.firestore {
     }
 
     function isSignedIn() { return request.auth != null; }
-    function isAdmin() { return isSignedIn() && request.auth.token.email == 'cassandrat897@gmail.com'; }
+    function isAdmin() { 
+      return isSignedIn() 
+        && request.auth.token.get('email', '').lower() == 'cassandrat897@gmail.com'
+        && request.auth.token.get('email_verified', false) == true; 
+    }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
 
     // ====== USERS ======
-    function isValidUser(data) {
-      return data.keys().size() >= 3
-        && data.keys().size() <= 6
-        && data.email is string && data.email.size() <= 256
-        && (data.get('name', '') is string)
-        && (data.get('createdAt', 0) is number)
-        && data.lastLogin is number;
-    }
-
     match /users/{userId} {
-      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow list: if isAdmin();
-      allow create: if isSignedIn()
-                   && isValidId(userId)
-                   && request.auth.uid == userId
-                   && isValidUser(incoming());
-      allow update: if isSignedIn()
-                   && isValidId(userId)
-                   && request.auth.uid == userId
-                   && (incoming().get('createdAt', 0) == existing().get('createdAt', 0))
-                   && incoming().email == existing().email
-                   && isValidUser(incoming())
-                   && incoming().diff(existing()).affectedKeys().hasOnly(['lastLogin', 'name']);
+      allow create, update: if isSignedIn() && request.auth.uid == userId;
       allow delete: if isAdmin();
     }
 
