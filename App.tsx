@@ -153,9 +153,13 @@ export default function App() {
   const [showCustomColor, setShowCustomColor] = useState(false);
   const [customHue, setCustomHue] = useState(0);
 
-  // Inline Folder Creation State
+  // Inline Creation States
   const [isCreatingFolderInline, setIsCreatingFolderInline] = useState(false);
   const [newInlineFolderName, setNewInlineFolderName] = useState('');
+  
+  const [isCreatingCategoryInline, setIsCreatingCategoryInline] = useState(false);
+  const [newInlineCategoryName, setNewInlineCategoryName] = useState('');
+  const [newInlineCategoryColor, setNewInlineCategoryColor] = useState(PASTEL_COLORS[0]);
   
   // Editing Tracking
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
@@ -184,6 +188,7 @@ export default function App() {
 
 
   const [totalUsers, setTotalUsers] = useState<number | null>(null);
+  const [usersList, setUsersList] = useState<any[]>([]);
 
   // --- Firebase Setup & Sync ---
   useEffect(() => {
@@ -221,12 +226,18 @@ export default function App() {
     if (user?.email === 'cassandrat897@gmail.com') {
       const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
         setTotalUsers(snapshot.size);
+        const list: any[] = [];
+        snapshot.forEach(d => {
+          list.push({ uid: d.id, ...d.data() });
+        });
+        setUsersList(list);
       }, (e) => {
         console.warn("Admin: Could not fetch total users:", e);
       });
       return () => unsub();
     } else {
       setTotalUsers(null);
+      setUsersList([]);
     }
   }, [user]);
 
@@ -683,18 +694,51 @@ export default function App() {
   };
 
   const handleSaveInlineFolder = async (e: React.MouseEvent) => {
-      e.preventDefault();
-      if (!newInlineFolderName.trim() || !user) return;
-      const id = Date.now().toString();
-      try {
-        await setDoc(doc(db, 'folders', id), { name: newInlineFolderName.trim(), userId: user.uid });
-        setExpandedFolderIds(prev => [...prev, id]);
-        setNewCategoryFolder(id); // Auto select
-        setNewInlineFolderName('');
-        setIsCreatingFolderInline(false);
-      } catch (e) {
-        handleFirestoreError(e, OperationType.CREATE, `folders/${id}`);
-      }
+    e.preventDefault();
+    if (!newInlineFolderName.trim() || !user) return;
+    const id = Date.now().toString();
+    try {
+      await setDoc(doc(db, 'folders', id), { name: newInlineFolderName.trim(), userId: user.uid });
+      setExpandedFolderIds(prev => [...prev, id]);
+      
+      // Auto select in whichever modal is using it
+      if (isAddCategoryOpen) setNewCategoryFolder(id);
+      if (isAddProfileOpen) setNewProfileFolderId(id);
+      
+      setNewInlineFolderName('');
+      setIsCreatingFolderInline(false);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `folders/${id}`);
+    }
+  };
+
+  const handleSaveInlineCategory = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!newInlineCategoryName.trim() || !user) return;
+    
+    const folderId = newProfileFolderId;
+    if (!folderId) {
+      alert("A folder must be selected first.");
+      return;
+    }
+
+    const id = Date.now().toString();
+    try {
+      await setDoc(doc(db, 'categories', id), {
+        name: newInlineCategoryName.trim(),
+        color: newInlineCategoryColor,
+        parentId: '', 
+        folderId: folderId,
+        userId: user.uid
+      });
+      
+      setNewProfileParentId(id);
+      setNewProfileCategory(id);
+      setNewInlineCategoryName('');
+      setIsCreatingCategoryInline(false);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `categories/${id}`);
+    }
   };
 
   const handleDeleteFolder = async (id: string) => {
@@ -791,6 +835,10 @@ export default function App() {
     setNewProfilePlatform('instagram');
     setEditingProfileId(null);
     setPickerExpandedCategoryIds([]);
+    setIsCreatingFolderInline(false);
+    setIsCreatingCategoryInline(false);
+    setNewInlineFolderName('');
+    setNewInlineCategoryName('');
   };
 
   const handleDeleteProfile = async (id: string) => {
@@ -804,51 +852,6 @@ export default function App() {
         setDeleteError(e.message || "Failed to delete profile.");
         handleFirestoreError(e, OperationType.DELETE, `profiles/${id}`);
       }
-    }
-  };
-
-  const handlePurgeAllData = async () => {
-    if (!user || user.email !== 'cassandrat897@gmail.com') return;
-    
-    const confirm1 = window.confirm("🚨 LAST WARNING: You are about to delete EVERYTHING (Profiles, Categories, Folders, Shared Lists, AND ALL USER ACCOUNTS). This is irreversible. Continue?");
-    if (!confirm1) return;
-    
-    const confirm2 = window.confirm("FINAL CONFIRMATION: This will wipe the ENTIRE database clean. You will need to re-register after this.");
-    if (!confirm2) return;
-
-    setIsLoggingIn(true);
-    try {
-      const collections = ['profiles', 'categories', 'folders', 'shared_lists', 'users', 'admins'];
-      for (const collName of collections) {
-        const snap = await getDocs(collection(db, collName));
-        const docs = snap.docs;
-        
-        for (let i = 0; i < docs.length; i += 500) {
-          const batch = writeBatch(db);
-          docs.slice(i, i + 500).forEach(d => batch.delete(d.ref));
-          await batch.commit();
-        }
-      }
-      alert("All platform data including users has been purged.");
-      
-      // Try to delete the admin's own auth account as well so they can re-register
-      try {
-        const currentUser = auth.currentUser;
-        if (currentUser) {
-          await deleteUser(currentUser);
-          alert("Your authentication account has also been deleted. You can now re-register fresh.");
-        }
-      } catch (authErr) {
-        console.warn("Could not delete auth account (requires recent login):", authErr);
-        alert("Data was purged, but your login account remains. You can still login, or if you want to re-register, you might need to login and immediately click delete account again.");
-        await auth.signOut();
-      }
-      window.location.reload();
-    } catch (e) {
-      console.error("Purge failed:", e);
-      alert("Failed to purge data. Check console for details.");
-    } finally {
-      setIsLoggingIn(false);
     }
   };
 
@@ -1674,11 +1677,28 @@ export default function App() {
                          <span className="text-gray-900 dark:text-white font-mono font-bold bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-md">{totalUsers}</span>
                       </div>
 
+                      <div className="mt-6 space-y-2">
+                        <p className="text-[10px] font-bold text-gray-400 px-1 uppercase tracking-wider">Registered Users List</p>
+                        <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                          {usersList.length === 0 && <p className="text-[10px] text-gray-400 italic px-2">No users found in database.</p>}
+                          {usersList.map(u => (
+                            <div key={u.uid} className="p-2 rounded-lg bg-gray-50 dark:bg-slate-800/50 border border-gray-100 dark:border-slate-700/50 flex justify-between items-center group">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-gray-900 dark:text-white truncate">{u.name || u.displayName || 'Unknown User'}</p>
+                                  <p className="text-[10px] text-gray-500 truncate">{u.email}</p>
+                                </div>
+                                <div className="text-[9px] text-gray-400">
+                                  {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
+                                </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
 
-                   </>
-                )}
-             </div>
-          </div>
+                    </>
+                 )}
+              </div>
+           </div>
           
           <button onClick={() => { setIsProfileModalOpen(false); handleLogout(); }} className="w-full py-3.5 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
             <Icons.LogOut className="w-5 h-5" /> Sign Out
@@ -1710,85 +1730,138 @@ export default function App() {
              <input type="text" className="w-full p-3 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 outline-none" value={newProfileDisplayName} onChange={(e) => setNewProfileDisplayName(e.target.value)} />
            </div>
            
-           {/* HIERARCHICAL SELECTION */}
-           <div className="p-3 rounded-xl bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700/50 space-y-3">
-             {/* 1. Folder Select */}
-             <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">1. Select Folder</label>
-                <select 
-                    className="w-full p-3 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 outline-none"
-                    value={newProfileFolderId}
-                    onChange={(e) => {
-                        setNewProfileFolderId(e.target.value);
-                        setNewProfileParentId('');
-                        setNewProfileCategory('');
-                    }}
-                >
-                    <option value="">-- Choose Folder --</option>
-                    {folders.map(f => (
-                        <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
-                    {/* Only show Unfiled option if there are actually unfiled root categories */}
-                    {categories.some(c => !c.parentId && !c.folderId) && (
-                        <option value="unfiled">Unfiled</option>
-                    )}
-                </select>
-             </div>
+            {/* HIERARCHICAL SELECTION */}
+            <div className="p-3 rounded-xl bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700/50 space-y-3">
+               {/* 1. Folder Select */}
+               <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide">1. Select Folder</label>
+                     {!isCreatingFolderInline && (
+                       <button onClick={() => setIsCreatingFolderInline(true)} className="text-[10px] text-blue-500 font-bold hover:underline">+ New Folder</button>
+                     )}
+                  </div>
+                  
+                  {isCreatingFolderInline ? (
+                     <div className="flex gap-2 animate-in fade-in slide-in-from-left-2 duration-200">
+                         <input 
+                             type="text" 
+                             className="flex-1 p-3 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 outline-none text-sm"
+                             placeholder="New Folder Name"
+                             value={newInlineFolderName}
+                             onChange={(e) => setNewInlineFolderName(e.target.value)}
+                             autoFocus
+                         />
+                         <button onClick={handleSaveInlineFolder} disabled={!newInlineFolderName.trim()} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm">Add</button>
+                         <button onClick={() => { setIsCreatingFolderInline(false); setNewInlineFolderName(''); }} className="px-3 py-2 bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 rounded-xl font-bold text-sm">✕</button>
+                     </div>
+                  ) : (
+                     <select 
+                         className="w-full p-3 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 outline-none"
+                         value={newProfileFolderId}
+                         onChange={(e) => {
+                             setNewProfileFolderId(e.target.value);
+                             setNewProfileParentId('');
+                             setNewProfileCategory('');
+                         }}
+                     >
+                         <option value="">-- Choose Folder --</option>
+                         {folders.map(f => (
+                             <option key={f.id} value={f.id}>{f.name}</option>
+                         ))}
+                         {categories.some(c => !c.parentId && !c.folderId) && (
+                             <option value="unfiled">Unfiled</option>
+                         )}
+                     </select>
+                  )}
+               </div>
 
-             {/* 2. Parent Category Select */}
-             <div className={`${!newProfileFolderId ? 'opacity-50 pointer-events-none' : ''} transition-opacity`}>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">2. Select Category</label>
-                <select 
-                    className="w-full p-3 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 outline-none"
-                    value={newProfileParentId}
-                    onChange={(e) => {
-                        const val = e.target.value;
-                        setNewProfileParentId(val);
-                        setNewProfileCategory(val); // Default to parent ID
-                    }}
-                    disabled={!newProfileFolderId}
-                >
-                    <option value="">-- Choose Category --</option>
-                    {categories
-                        .filter(c => {
-                             if (!newProfileFolderId) return false;
-                             if (newProfileFolderId === 'unfiled') return !c.parentId && !c.folderId;
-                             return !c.parentId && c.folderId === newProfileFolderId;
-                        })
-                        .sort((a,b) => a.name.localeCompare(b.name))
-                        .map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                        ))
-                    }
-                </select>
-             </div>
+               {/* 2. Parent Category Select */}
+               <div className={`${!newProfileFolderId ? 'opacity-50 pointer-events-none' : ''} transition-opacity`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide">2. Select Category</label>
+                     {!isCreatingCategoryInline && newProfileFolderId && (
+                       <button onClick={() => setIsCreatingCategoryInline(true)} className="text-[10px] text-pink-500 font-bold hover:underline">+ New Category</button>
+                     )}
+                  </div>
 
-             {/* 3. Subcategory Select (Conditional) */}
-             {newProfileParentId && categories.some(c => c.parentId === newProfileParentId) && (
-                 <div className="animate-in fade-in slide-in-from-top-1">
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">3. Select Subcategory (Optional)</label>
-                    <select 
-                        className="w-full p-3 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 outline-none"
-                        value={newProfileCategory !== newProfileParentId ? newProfileCategory : ''}
-                        onChange={(e) => {
-                            const val = e.target.value;
-                            setNewProfileCategory(val || newProfileParentId);
-                        }}
-                    >
-                        <option value="">None (Keep as {categories.find(c => c.id === newProfileParentId)?.name})</option>
-                        {categories
-                            .filter(c => c.parentId === newProfileParentId)
-                            .sort((a,b) => a.name.localeCompare(b.name))
-                            .map(c => (
-                                <option key={c.id} value={c.id}>{c.name}</option>
-                            ))
-                        }
-                    </select>
-                 </div>
-             )}
-           </div>
+                  {isCreatingCategoryInline ? (
+                     <div className="space-y-2 animate-in fade-in slide-in-from-left-2 duration-200">
+                         <div className="flex gap-2">
+                            <input 
+                               type="text" 
+                               className="flex-1 p-3 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 outline-none text-sm"
+                               placeholder="New Category Name"
+                               value={newInlineCategoryName}
+                               onChange={(e) => setNewInlineCategoryName(e.target.value)}
+                               autoFocus
+                            />
+                            <button onClick={handleSaveInlineCategory} disabled={!newInlineCategoryName.trim()} className="px-4 py-2 bg-pink-500 text-white rounded-xl font-bold text-sm">Add</button>
+                            <button onClick={() => { setIsCreatingCategoryInline(false); setNewInlineCategoryName(''); }} className="px-3 py-2 bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 rounded-xl font-bold text-sm">✕</button>
+                         </div>
+                         <div className="flex flex-wrap gap-1.5 px-1 pb-1">
+                            {PASTEL_COLORS.map(c => (
+                               <button 
+                                  key={c} 
+                                  onClick={() => setNewInlineCategoryColor(c)} 
+                                  className={`w-5 h-5 rounded-full border-2 ${newInlineCategoryColor === c ? 'border-gray-900' : 'border-transparent'}`} 
+                                  style={{ backgroundColor: c }}
+                               />
+                            ))}
+                         </div>
+                     </div>
+                  ) : (
+                     <select 
+                         className="w-full p-3 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 outline-none"
+                         value={newProfileParentId}
+                         onChange={(e) => {
+                             const val = e.target.value;
+                             setNewProfileParentId(val);
+                             setNewProfileCategory(val);
+                         }}
+                         disabled={!newProfileFolderId}
+                     >
+                         <option value="">-- Choose Category --</option>
+                         {categories
+                             .filter(c => {
+                                  if (!newProfileFolderId) return false;
+                                  if (newProfileFolderId === 'unfiled') return !c.parentId && !c.folderId;
+                                  return !c.parentId && c.folderId === newProfileFolderId;
+                             })
+                             .sort((a,b) => a.name.localeCompare(b.name))
+                             .map(c => (
+                                 <option key={c.id} value={c.id}>{c.name}</option>
+                             ))
+                         }
+                     </select>
+                  )}
+               </div>
 
-           <div>
+               {/* 3. Subcategory Select (Conditional) */}
+               {newProfileParentId && categories.some(c => c.parentId === newProfileParentId) && (
+                   <div className="animate-in fade-in slide-in-from-top-1">
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">3. Select Subcategory (Optional)</label>
+                      <select 
+                          className="w-full p-3 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 outline-none"
+                          value={newProfileCategory !== newProfileParentId ? newProfileCategory : ''}
+                          onChange={(e) => {
+                              const val = e.target.value;
+                              setNewProfileCategory(val || newProfileParentId);
+                          }}
+                      >
+                          <option value="">None (Keep as {categories.find(c => c.id === newProfileParentId)?.name})</option>
+                          {categories
+                              .filter(c => c.parentId === newProfileParentId)
+                              .sort((a,b) => a.name.localeCompare(b.name))
+                              .map(c => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                              ))
+                          }
+                      </select>
+                   </div>
+               )}
+            </div>
+
+            <div>
              <label className="block text-sm font-medium mb-1">Notes</label>
              <textarea className="w-full p-3 rounded-xl bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 outline-none h-20" value={newProfileNotes} onChange={(e) => setNewProfileNotes(e.target.value)} />
            </div>
