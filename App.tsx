@@ -11,7 +11,11 @@ import {
   signOut, 
   onAuthStateChanged, 
   User, 
-  updateProfile
+  updateProfile,
+  deleteUser,
+  sendPasswordResetEmail,
+  signInWithPopup,
+  GoogleAuthProvider
 } from 'firebase/auth';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, getDocFromServer, getDocs } from 'firebase/firestore';
 
@@ -318,7 +322,52 @@ export default function App() {
       await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
     } catch (e: any) {
       console.error(e);
-      setLoginError(e.message || "Failed to sign in.");
+      let msg = e.message || "Failed to sign in.";
+      if (e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+        msg = "Invalid email or password. Please try again or reset your password.";
+      }
+      setLoginError(msg);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const email = loginEmail || regEmail;
+    if (!email) {
+      alert("Please enter your email address first in the login field.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert("Password reset email sent! Please check your inbox.");
+    } catch (e: any) {
+      alert("Failed to send reset email: " + e.message);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoggingIn(true);
+    setLoginError('');
+    const provider = new GoogleAuthProvider();
+    try {
+      const result = await signInWithPopup(auth, provider);
+      // Create user profile in Firestore if it doesn't exist
+      const userDoc = await getDocFromServer(doc(db, 'users', result.user.uid));
+      if (!userDoc.exists()) {
+        await setDoc(doc(db, 'users', result.user.uid), {
+          uid: result.user.uid,
+          email: result.user.email,
+          displayName: result.user.displayName,
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString(),
+        });
+      }
+    } catch (e: any) {
+      console.error(e);
+      if (e.code !== 'auth/popup-closed-by-user') {
+        setLoginError(e.message || "Failed to sign in with Google.");
+      }
     } finally {
       setIsLoggingIn(false);
     }
@@ -758,6 +807,51 @@ export default function App() {
     }
   };
 
+  const handlePurgeAllData = async () => {
+    if (!user || user.email !== 'cassandrat897@gmail.com') return;
+    
+    const confirm1 = window.confirm("🚨 LAST WARNING: You are about to delete EVERYTHING (Profiles, Categories, Folders, Shared Lists, AND ALL USER ACCOUNTS). This is irreversible. Continue?");
+    if (!confirm1) return;
+    
+    const confirm2 = window.confirm("FINAL CONFIRMATION: This will wipe the ENTIRE database clean. You will need to re-register after this.");
+    if (!confirm2) return;
+
+    setIsLoggingIn(true);
+    try {
+      const collections = ['profiles', 'categories', 'folders', 'shared_lists', 'users', 'admins'];
+      for (const collName of collections) {
+        const snap = await getDocs(collection(db, collName));
+        const docs = snap.docs;
+        
+        for (let i = 0; i < docs.length; i += 500) {
+          const batch = writeBatch(db);
+          docs.slice(i, i + 500).forEach(d => batch.delete(d.ref));
+          await batch.commit();
+        }
+      }
+      alert("All platform data including users has been purged.");
+      
+      // Try to delete the admin's own auth account as well so they can re-register
+      try {
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          await deleteUser(currentUser);
+          alert("Your authentication account has also been deleted. You can now re-register fresh.");
+        }
+      } catch (authErr) {
+        console.warn("Could not delete auth account (requires recent login):", authErr);
+        alert("Data was purged, but your login account remains. You can still login, or if you want to re-register, you might need to login and immediately click delete account again.");
+        await auth.signOut();
+      }
+      window.location.reload();
+    } catch (e) {
+      console.error("Purge failed:", e);
+      alert("Failed to purge data. Check console for details.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
   const handleOpenCategoryModal = (category?: Category) => {
     if (category) {
         setEditingCategoryId(category.id);
@@ -1068,6 +1162,15 @@ export default function App() {
              <div className="space-y-1.5">
                <div className="flex justify-between items-center px-1">
                  <label className="text-xs font-bold text-gray-700 dark:text-slate-300">Password</label>
+                 {authMode === 'login' && (
+                   <button 
+                     type="button"
+                     onClick={handleForgotPassword}
+                     className="text-[10px] font-bold text-pink-500 hover:text-pink-600 uppercase tracking-wider underline underline-offset-2"
+                   >
+                     Forgot?
+                   </button>
+                 )}
                </div>
                <div className="relative">
                  <Icons.Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1097,7 +1200,31 @@ export default function App() {
              </button>
            </form>
 
-           <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-700 text-center">
+           <div className="relative my-8">
+             <div className="absolute inset-0 flex items-center">
+               <div className="w-full border-t border-gray-100 dark:border-slate-800"></div>
+             </div>
+             <div className="relative flex justify-center text-[10px] uppercase tracking-widest font-bold">
+               <span className="bg-white dark:bg-slate-900 px-4 text-gray-400">Or continue with</span>
+             </div>
+           </div>
+
+           <button 
+             type="button"
+             onClick={handleGoogleSignIn}
+             disabled={isLoggingIn}
+             className="w-full py-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-white rounded-xl font-bold transition-all hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center justify-center gap-3 shadow-sm active:scale-[0.98] disabled:opacity-70"
+           >
+             <svg className="w-5 h-5" viewBox="0 0 24 24">
+               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+               <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+               <path d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 12-4.53z" fill="#EA4335" />
+             </svg>
+             Google
+           </button>
+
+           <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-700 text-center space-y-4">
              <p className="text-sm text-gray-500 dark:text-slate-400">
                {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
                <button 
@@ -1107,6 +1234,11 @@ export default function App() {
                  {authMode === 'login' ? 'Sign Up' : 'Log In'}
                </button>
              </p>
+             {authMode === 'register' && loginError && loginError.toLowerCase().includes('already exists') && (
+               <p className="text-pink-500 font-bold text-xs animate-bounce">
+                 Tip: Switch to "Log In" above to access your account.
+               </p>
+             )}
            </div>
         </div>
 
@@ -1541,6 +1673,8 @@ export default function App() {
                          </span>
                          <span className="text-gray-900 dark:text-white font-mono font-bold bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-md">{totalUsers}</span>
                       </div>
+
+
                    </>
                 )}
              </div>
