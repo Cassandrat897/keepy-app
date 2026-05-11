@@ -207,12 +207,23 @@ export default function App() {
     if (user?.email?.toLowerCase() === 'cassandrat897@gmail.com') {
       console.log("Admin access detected: cassandrat897@gmail.com");
       const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
-        setTotalUsers(snapshot.size);
-        const list: any[] = [];
+        const fullList: any[] = [];
         snapshot.forEach(d => {
-          list.push({ uid: d.id, ...d.data() });
+          fullList.push({ uid: d.id, ...d.data() });
         });
-        setUsersList(list);
+
+        // Deduplicate by email (case-insensitive)
+        const uniqueUsersMap = new Map();
+        fullList.forEach(u => {
+          const email = u.email?.toLowerCase() || `no-email-${u.uid}`;
+          if (!uniqueUsersMap.has(email)) {
+            uniqueUsersMap.set(email, u);
+          }
+        });
+
+        const deduplicatedList = Array.from(uniqueUsersMap.values());
+        setTotalUsers(deduplicatedList.length);
+        setUsersList(deduplicatedList);
       }, (e) => {
         console.warn("Admin: Could not fetch total users:", e);
         handleFirestoreError(e, OperationType.LIST, 'users');
@@ -1815,6 +1826,91 @@ export default function App() {
                     </>
                  )}
               </div>
+           </div>
+          
+           {/* PWA Installation Instructions */}
+           <div className="my-6 pt-6 border-t border-gray-100 dark:border-slate-800 space-y-6">
+             <div className="space-y-2 text-center">
+               <div className="flex items-center justify-center gap-2 text-pink-500">
+                 <Icons.Smartphone className="w-4 h-4" />
+                 <h3 className="text-[10px] font-bold uppercase tracking-widest">For a better experience</h3>
+               </div>
+               <p className="text-sm text-gray-600 dark:text-slate-300 font-medium leading-tight px-4">
+                 Add Keepy to your home screen like a real app 📱
+               </p>
+             </div>
+             
+             <div className="grid grid-cols-1 gap-6 text-left px-2">
+               <div className="space-y-3">
+                 <div className="flex items-center gap-2">
+                   <div className="p-1 px-1.5 bg-gray-100 dark:bg-slate-800 rounded-lg text-gray-600 dark:text-gray-400">
+                     <Icons.Apple className="w-3.5 h-3.5" />
+                   </div>
+                   <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">iPhone (Safari)</h4>
+                 </div>
+                 <ul className="text-xs text-gray-500 dark:text-slate-400 space-y-2.5">
+                   <li className="flex gap-3">
+                     <span className="w-5 h-5 rounded-full bg-pink-50 dark:bg-pink-900/20 text-pink-500 flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
+                     <span>Open Keepy in Safari</span>
+                   </li>
+                   <li className="flex gap-3">
+                     <span className="w-5 h-5 rounded-full bg-pink-50 dark:bg-pink-900/20 text-pink-500 flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
+                     <span className="flex items-center gap-1 flex-wrap">
+                       Tap the 
+                       <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 mx-0.5">
+                         <Icons.Share className="w-2.5 h-2.5" />
+                       </span> 
+                       Share icon
+                     </span>
+                   </li>
+                   <li className="flex gap-3">
+                     <span className="w-5 h-5 rounded-full bg-pink-50 dark:bg-pink-900/20 text-pink-500 flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
+                     <span>Scroll down and tap <strong>Add to Home Screen</strong></span>
+                   </li>
+                   <li className="flex gap-3">
+                     <span className="w-5 h-5 rounded-full bg-pink-50 dark:bg-pink-900/20 text-pink-500 flex items-center justify-center text-[10px] font-bold shrink-0">4</span>
+                     <span>Tap <strong>Add</strong></span>
+                   </li>
+                 </ul>
+               </div>
+               
+               <div className="space-y-3">
+                 <div className="flex items-center gap-2">
+                   <div className="p-1 px-1.5 bg-gray-100 dark:bg-slate-800 rounded-lg text-gray-600 dark:text-gray-400">
+                     <Icons.Smartphone className="w-3.5 h-3.5" />
+                   </div>
+                   <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Android (Chrome)</h4>
+                 </div>
+                 <ul className="text-xs text-gray-500 dark:text-slate-400 space-y-2.5">
+                   <li className="flex gap-3">
+                     <span className="w-5 h-5 rounded-full bg-pink-50 dark:bg-pink-900/20 text-pink-500 flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
+                     <span>Open Keepy in Chrome</span>
+                   </li>
+                   <li className="flex gap-3">
+                     <span className="w-5 h-5 rounded-full bg-pink-50 dark:bg-pink-900/20 text-pink-500 flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
+                     <span className="flex items-center gap-1.5">
+                       Tap the 
+                       <div className="p-0.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded">
+                          <Icons.MoreVertical className="w-3 h-3" /> 
+                       </div>
+                       menu (top right)
+                     </span>
+                   </li>
+                   <li className="flex gap-3">
+                     <span className="w-5 h-5 rounded-full bg-pink-50 dark:bg-pink-900/20 text-pink-500 flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
+                     <span>Tap <strong>Add to Home Screen</strong> or <strong>Install App</strong></span>
+                   </li>
+                   <li className="flex gap-3">
+                     <span className="w-5 h-5 rounded-full bg-pink-50 dark:bg-pink-900/20 text-pink-500 flex items-center justify-center text-[10px] font-bold shrink-0">4</span>
+                     <span>Tap <strong>Install / Add</strong></span>
+                   </li>
+                 </ul>
+               </div>
+             </div>
+             
+             <p className="text-center pt-2 text-[10px] text-pink-500 font-medium italic leading-relaxed px-4">
+               Now Keepy will open directly from your home screen just like a regular app ✨
+             </p>
            </div>
           
           <button onClick={() => { setIsProfileModalOpen(false); handleLogout(); }} className="w-full py-3.5 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
