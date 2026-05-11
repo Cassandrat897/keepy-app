@@ -585,11 +585,13 @@ export default function App() {
          }))
        };
     });
+    const unfiledCats = rootCategories.filter(c => !c.folderId);
     
     return {
-      folders: folderGroups
+      folders: folderGroups,
+      unfiled: user?.email?.toLowerCase() === 'cassandrat897@gmail.com' ? unfiledCats : []
     };
-  }, [categories, folders, categorySort, folderSort]);
+  }, [categories, folders, categorySort, folderSort, user]);
 
   const activeParentId = useMemo(() => {
     if (!selectedCategoryId) return '';
@@ -1362,6 +1364,44 @@ export default function App() {
                 )}
             </div>
           ))}
+          {user?.email?.toLowerCase() === 'cassandrat897@gmail.com' && displayTree.unfiled.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">
+                  <h4 className="px-4 text-[10px] font-bold text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Icons.AlertTriangle className="w-3 h-3" /> Orphaned Categories
+                  </h4>
+                  {displayTree.unfiled.map(cat => (
+                      <div key={cat.id} className="space-y-1">
+                          <div className={`group flex items-center rounded-xl transition-colors pr-2 ${selectedCategoryId === cat.id ? 'bg-gray-100 dark:bg-slate-800' : 'hover:bg-gray-50 dark:hover:bg-slate-800/50'}`}>
+                                <div className="w-8 flex justify-center flex-shrink-0">
+                                   {categories.filter(sub => sub.parentId === cat.id).length > 0 && (
+                                        <button onClick={(e) => { e.stopPropagation(); toggleCategoryExpand(cat.id); }} className="text-gray-400">
+                                            {expandedCategoryIds.includes(cat.id) ? <Icons.ChevronDown className="w-4 h-4" /> : <Icons.ChevronRight className="w-4 h-4" />}
+                                        </button>
+                                   )}
+                                </div>
+                                <button onClick={() => handleSelectCategory(cat.id)} className={`flex-1 flex items-center gap-3 py-2 text-left ${selectedCategoryId === cat.id ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-slate-400'}`}>
+                                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }}></span>
+                                    <span className="truncate">{cat.name}</span>
+                                </button>
+                                <div className="opacity-0 group-hover:opacity-100 flex">
+                                    <button onClick={(e) => { e.stopPropagation(); handleOpenCategoryModal(cat); }} className="p-1.5 text-gray-400 hover:text-blue-500"><Icons.Edit2 className="w-3 h-3" /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id); }} className="p-1.5 text-gray-400 hover:text-red-500"><Icons.Trash2 className="w-3.5 h-3.5" /></button>
+                                </div>
+                          </div>
+                          {expandedCategoryIds.includes(cat.id) && (
+                            <div className="ml-8 space-y-1">
+                                {categories.filter(sub => sub.parentId === cat.id).map(sub => (
+                                     <div key={sub.id} onClick={() => handleSelectCategory(sub.id)} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer ${selectedCategoryId === sub.id ? 'bg-gray-100 dark:bg-slate-800' : 'hover:bg-gray-50'}`}>
+                                         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: sub.color }}></span>
+                                         <span className="text-sm text-gray-600 dark:text-slate-400">{sub.name}</span>
+                                     </div>
+                                ))}
+                            </div>
+                          )}
+                      </div>
+                  ))}
+              </div>
+          )}
         </nav>
         
         <div className="p-4 border-t border-gray-200 dark:border-slate-800 space-y-2">
