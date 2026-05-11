@@ -45,10 +45,10 @@ service cloud.firestore {
                    && isValidFolder(incoming());
       allow update: if isSignedIn()
                    && isValidId(folderId)
-                   && existing().userId == request.auth.uid
-                   && incoming().userId == existing().userId
-                   && isValidFolder(incoming())
-                   && incoming().diff(existing()).affectedKeys().hasOnly(['name']);
+                   && (
+                     (existing().userId == request.auth.uid && incoming().userId == existing().userId && isValidFolder(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['name']))
+                     || isAdmin()
+                   );
       allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
     }
 
@@ -58,9 +58,13 @@ service cloud.firestore {
         && data.keys().size() <= 8
         && data.name is string && data.name.size() <= 200
         && data.color is string && data.color.size() <= 100
-        && data.userId is string && data.userId == request.auth.uid
+        && data.userId is string && (data.userId == request.auth.uid || isAdmin())
         && (data.get('parentId', '') is string)
-        && (data.get('folderId', '') is string);
+        && (data.get('folderId', '') is string)
+        && (
+          (data.get('parentId', '') == '' && data.get('folderId', '') != '') ||
+          (data.get('parentId', '') != '' && data.get('folderId', '') == '')
+        );
     }
 
     match /categories/{categoryId} {
@@ -71,10 +75,10 @@ service cloud.firestore {
                    && isValidCategory(incoming());
       allow update: if isSignedIn()
                    && isValidId(categoryId)
-                   && existing().userId == request.auth.uid
-                   && incoming().userId == existing().userId
-                   && isValidCategory(incoming())
-                   && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'color', 'parentId', 'folderId']);
+                   && (
+                     (existing().userId == request.auth.uid && incoming().userId == existing().userId && isValidCategory(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'color', 'parentId', 'folderId']))
+                     || isAdmin()
+                   );
       allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
     }
 
@@ -86,7 +90,7 @@ service cloud.firestore {
         && data.platform is string && data.platform.size() <= 100
         && data.categoryId is string && data.categoryId.size() <= 128
         && data.createdAt is number
-        && data.userId is string && data.userId == request.auth.uid
+        && data.userId is string && (data.userId == request.auth.uid || isAdmin())
         && (data.get('displayName', '') is string)
         && (data.get('notes', '') is string);
     }
@@ -99,10 +103,10 @@ service cloud.firestore {
                    && isValidProfile(incoming());
       allow update: if isSignedIn()
                    && isValidId(profileId)
-                   && existing().userId == request.auth.uid
-                   && incoming().userId == existing().userId
-                   && isValidProfile(incoming())
-                   && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'platform', 'categoryId', 'displayName', 'notes']);
+                   && (
+                     (existing().userId == request.auth.uid && incoming().userId == existing().userId && isValidProfile(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'platform', 'categoryId', 'displayName', 'notes']))
+                     || isAdmin()
+                   );
       allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
     }
 
