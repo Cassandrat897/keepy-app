@@ -190,6 +190,13 @@ export default function App() {
   const [totalUsers, setTotalUsers] = useState<number | null>(null);
   const [usersList, setUsersList] = useState<any[]>([]);
 
+  // Admin Data View States
+  const [selectedAdminUserId, setSelectedAdminUserId] = useState<string | null>(null);
+  const [adminFolders, setAdminFolders] = useState<Folder[]>([]);
+  const [adminCategories, setAdminCategories] = useState<Category[]>([]);
+  const [adminProfiles, setAdminProfiles] = useState<Profile[]>([]);
+  const [isAdminDataLoading, setIsAdminDataLoading] = useState(false);
+
   // --- Firebase Setup & Sync ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -233,6 +240,109 @@ export default function App() {
       setTotalUsers(null);
       setUsersList([]);
     }
+  }, [user]);
+
+  // Admin Sync: Fetch data for a selected user
+  useEffect(() => {
+    if (user?.email?.toLowerCase() !== 'cassandrat897@gmail.com' || !selectedAdminUserId) {
+      setAdminFolders([]);
+      setAdminCategories([]);
+      setAdminProfiles([]);
+      return;
+    }
+
+    setIsAdminDataLoading(true);
+
+    const unsubFolders = onSnapshot(query(collection(db, 'folders'), where('userId', '==', selectedAdminUserId)), (snapshot) => {
+      const dbFolders: Folder[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        dbFolders.push({ id: doc.id, name: data.name, userId: data.userId });
+      });
+      setAdminFolders(dbFolders);
+    }, (error) => {
+      console.warn("Admin Folder sync error:", error);
+    });
+
+    const unsubCategories = onSnapshot(query(collection(db, 'categories'), where('userId', '==', selectedAdminUserId)), (snapshot) => {
+      const dbCategories: Category[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        dbCategories.push({
+          id: doc.id, name: data.name, color: data.color, parentId: data.parentId, folderId: data.folderId, userId: data.userId
+        });
+      });
+      setAdminCategories(dbCategories);
+    }, (error) => {
+      console.warn("Admin Category sync error:", error);
+    });
+
+    const unsubProfiles = onSnapshot(query(collection(db, 'profiles'), where('userId', '==', selectedAdminUserId)), (snapshot) => {
+      const dbProfiles: Profile[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        dbProfiles.push({
+          id: doc.id, username: data.username, displayName: data.displayName, platform: data.platform as Platform, categoryId: data.categoryId, notes: data.notes, createdAt: data.createdAt, userId: data.userId
+        });
+      });
+      setAdminProfiles(dbProfiles);
+      setIsAdminDataLoading(false);
+    }, (error) => {
+      console.warn("Admin Profile sync error:", error);
+      setIsAdminDataLoading(false);
+    });
+
+    return () => {
+      unsubFolders();
+      unsubCategories();
+      unsubProfiles();
+    };
+  }, [user, selectedAdminUserId]);
+
+  // --- Share Target Logic ---
+  useEffect(() => {
+    // We handle the shared content even if user is not logged in yet,
+    // the state will be preserved until the modal opens (after login/sync)
+    const handleIncomingShare = () => {
+      const params = new URLSearchParams(window.location.search);
+      const sharedText = params.get('text');
+      const sharedUrl = params.get('url');
+
+      if (sharedText || sharedUrl) {
+        const content = sharedUrl || sharedText || "";
+        
+        if (content) {
+          // If content contains multiple things (like title + url), try to extract the URL
+          const urlMatch = content.match(/https?:\/\/[^\s]+/);
+          const finalContent = urlMatch ? urlMatch[0] : content;
+
+          resetProfileForm();
+          handleProfileInput(finalContent);
+
+          // We wait until user is authenticated to open the modal
+          // This effect runs on mount, if user becomes auth later, we need to check if 
+          // we have a shared content.
+          if (user) {
+            setIsAddProfileOpen(true);
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+          } else {
+            // Store it to open later when user logs in
+            const checkAuth = setInterval(() => {
+              if (auth.currentUser) {
+                setIsAddProfileOpen(true);
+                window.history.replaceState({}, document.title, window.location.pathname);
+                clearInterval(checkAuth);
+              }
+            }, 1000);
+            // Clean up after 10 seconds if no login happens
+            setTimeout(() => clearInterval(checkAuth), 10000);
+          }
+        }
+      }
+    };
+
+    handleIncomingShare();
   }, [user]);
 
   useEffect(() => {
@@ -511,7 +621,7 @@ export default function App() {
     
     let detectedPlatform = newProfilePlatform;
     if (value.includes('instagram.com')) detectedPlatform = 'instagram';
-    else if (value.includes('facebook.com')) detectedPlatform = 'facebook';
+    else if (value.includes('facebook.com') || value.includes('fb.com') || value.includes('fb.watch')) detectedPlatform = 'facebook';
     else if (value.includes('twitter.com') || value.includes('x.com')) detectedPlatform = 'x';
     else if (value.includes('tiktok.com')) detectedPlatform = 'tiktok';
     else if (value.includes('google.com/maps') || value.includes('maps.google.com') || value.includes('goo.gl/maps') || value.includes('maps.app.goo.gl')) detectedPlatform = 'google-maps';
@@ -1766,7 +1876,7 @@ export default function App() {
       )}
 
       {/* User Profile Modal */}
-      <Modal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} title="My Profile">
+      <Modal isOpen={isProfileModalOpen} onClose={() => { setIsProfileModalOpen(false); setSelectedAdminUserId(null); }} title="My Profile">
         <div className="space-y-6">
           <div className="flex flex-col items-center justify-center p-6 bg-gray-50 dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-2xl relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-pink-400/10 to-violet-500/10 pointer-events-none"></div>
@@ -1806,21 +1916,88 @@ export default function App() {
                       </div>
 
                       <div className="mt-6 space-y-2">
-                        <p className="text-[10px] font-bold text-gray-400 px-1 uppercase tracking-wider">Registered Users List</p>
-                        <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                          {usersList.length === 0 && <p className="text-[10px] text-gray-400 italic px-2">No users found in database.</p>}
-                          {usersList.map(u => (
-                            <div key={u.uid} className="p-2 rounded-lg bg-gray-50 dark:bg-slate-800/50 border border-gray-100 dark:border-slate-700/50 flex justify-between items-center group">
-                                <div className="min-w-0">
-                                  <p className="text-xs font-bold text-gray-900 dark:text-white truncate">{u.name || u.displayName || 'Unknown User'}</p>
-                                  <p className="text-[10px] text-gray-500 truncate">{u.email}</p>
-                                </div>
-                                <div className="text-[9px] text-gray-400">
-                                  {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
-                                </div>
-                            </div>
-                          ))}
+                        <div className="flex items-center justify-between px-1">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                            {selectedAdminUserId ? "User's Lists & Profiles" : "Registered Users List"}
+                          </p>
+                          {selectedAdminUserId && (
+                             <button 
+                               onClick={() => setSelectedAdminUserId(null)}
+                               className="flex items-center gap-1 text-[10px] font-bold text-pink-500 uppercase tracking-wider hover:opacity-80"
+                             >
+                               <Icons.ChevronLeft className="w-3 h-3" /> Back
+                             </button>
+                          )}
                         </div>
+
+                        {selectedAdminUserId ? (
+                          <div className="space-y-4 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
+                             {isAdminDataLoading ? (
+                               <div className="flex justify-center py-8">
+                                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-pink-500"></div>
+                               </div>
+                             ) : (
+                               <div className="space-y-4">
+                                  {adminFolders.map(folder => (
+                                    <div key={folder.id} className="space-y-2">
+                                      <div className="flex items-center gap-2 p-2 bg-indigo-50 dark:bg-indigo-900/10 rounded-lg border border-indigo-100 dark:border-indigo-900/20">
+                                        <Icons.Folder className="w-3.5 h-3.5 text-indigo-500" />
+                                        <span className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300">{folder.name}</span>
+                                      </div>
+                                      
+                                      <div className="pl-4 space-y-2 border-l border-indigo-100 dark:border-indigo-900/20">
+                                        {adminCategories.filter(c => c.folderId === folder.id).map(cat => (
+                                          <div key={cat.id} className="space-y-1.5">
+                                            <div className="flex items-center gap-2 p-1.5 bg-white dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700 shadow-sm">
+                                              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }}></div>
+                                              <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300 truncate">{cat.name}</span>
+                                              <span className="ml-auto text-[9px] text-gray-400 font-mono">
+                                                {adminProfiles.filter(p => p.categoryId === cat.id).length}
+                                              </span>
+                                            </div>
+                                            
+                                            <div className="pl-3 space-y-1">
+                                              {adminProfiles.filter(p => p.categoryId === cat.id).map(profile => (
+                                                <div key={profile.id} className="flex items-center gap-2 py-0.5">
+                                                   <div className="w-1.5 h-1.5 rounded-full bg-gray-200 dark:bg-slate-700"></div>
+                                                   <span className="text-[9px] text-gray-500 dark:text-gray-400 truncate">
+                                                     {profile.displayName || profile.username}
+                                                   </span>
+                                                   <span className="text-[8px] text-gray-400 uppercase font-bold ml-auto opacity-60">
+                                                     {profile.platform}
+                                                   </span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {adminFolders.length === 0 && !isAdminDataLoading && (
+                                    <p className="text-center py-6 text-[10px] text-gray-400 italic">This user hasn't created any lists yet.</p>
+                                  )}
+                               </div>
+                             )}
+                          </div>
+                        ) : (
+                          <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                            {usersList.length === 0 && <p className="text-[10px] text-gray-400 italic px-2">No users found in database.</p>}
+                            {usersList.map(u => (
+                              <div 
+                                key={u.uid} 
+                                onClick={() => setSelectedAdminUserId(u.uid)}
+                                className="p-2 rounded-lg bg-gray-50 dark:bg-slate-800/50 border border-gray-100 dark:border-slate-700/50 flex justify-between items-center group cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/10 hover:border-indigo-100 dark:hover:border-indigo-900/30 transition-all"
+                              >
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{u.name || u.displayName || 'Unknown User'}</p>
+                                    <p className="text-[10px] text-gray-500 truncate">{u.email}</p>
+                                  </div>
+                                  <Icons.ChevronRight className="w-3 h-3 text-gray-300 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                     </>
